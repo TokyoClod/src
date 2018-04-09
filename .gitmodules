@@ -1,0 +1,6 @@
+[submodule "apriltags_ros"]
+	path = apriltags_ros
+	url = git@github.com:TokyoClod/apriltags_ros.git
+[submodule "vision_visp"]
+	path = vision_visp
+	url = git@github.com:TokyoClod/vision_visp.git
