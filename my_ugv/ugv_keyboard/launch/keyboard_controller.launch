@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <!-- Note that axis IDs are those from the joystick message plus one, to be able to invert axes by specifiying either positive or negative axis numbers.-->
+  <!-- Axis 2 from joy message thus has to be set as '3' or '-3'(inverted mode) below-->
+  <node name="ugv_keyboard_node" pkg="ugv_keyboard" type="ugv_keyboard" output="screen">
+    <rosparam subst_value="true">
+      scale_angular: 0.5
+      scale_linear: 1
+    </rosparam>
+  </node>
+</launch>

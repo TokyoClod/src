@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="ibvs" type="ibvs_node" name="ibvs_node" output="screen">
+        <param name="target_pixel_size" value="200" />
+        <param name="target_real_size" value="0.80" />
+        <param name="lambda0" value="2" />
+        <param name="lambdaoo" value="0.4" />
+        <param name="lambda0_d" value="20" />
+    </node>
+
+    <node name="image_view" pkg="image_view" type="image_view" respawn="false" output="screen">
+        <remap from="image" to="/out_image" />
+    </node>
+</launch>

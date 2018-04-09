@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+
+
+<launch>
+    <param name="use_sim_time" value="true" />
+    <!-- send the robot XML to param server -->
+    <param name="ugv_robot" command="$(find xacro)/xacro.py '$(find ugv_description)/urdf/ugv_robot.urdf.xacro'" />
+
+    <!-- push robot_description to factory and spawn robot in gazebo -->
+    <node name="spawn_robot_ugv" pkg="gazebo_ros" type="spawn_model"
+      args="-param ugv_robot
+            -urdf
+            -z 0.15
+            -model ugv_robot"
+      respawn="false" output="screen" />
+
+    <node name="teleop_twist_keyboard" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" output="screen"/>    
+
+    <!--include file="$(find ugv_keyboard)/launch/keyboard_controller.launch"/-->
+    <!--include file="$(find ros-universal-teleop)/launch/example.launch"/-->
+<!-- 
+    <node name="ugv_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"
+        respawn="false" output="screen">
+    </node>
+-->
+    
+
+    
+</launch>

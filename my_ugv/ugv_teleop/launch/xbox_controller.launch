@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+
+<launch>
+  <arg name="joy_dev" default="/dev/input/js0" />
+
+  <node name="joy" pkg="joy" type="joy_node" output="screen" >
+    <param name="dev" value="$(arg joy_dev)" />
+    <param name="autorepeat_rate" value="10" />
+    <param name="coalesce_interval" value="0.01" />
+  </node>
+
+  <!-- Note that axis IDs are those from the joystick message plus one, to be able to invert axes by specifiying either positive or negative axis numbers.-->
+  <!-- Axis 2 from joy message thus has to be set as '3' or '-3'(inverted mode) below-->
+  <node name="teleop" pkg="ugv_teleop" type="ugv_teleop" output="screen">
+    <rosparam subst_value="true">
+      x_axis: 2
+      y_axis: 5
+      z_axis: 4
+      yaw_axis: 4
+
+      slow_button: 4
+      go_button: 6
+      stop_button: 2
+    </rosparam>
+
+  </node>
+</launch>

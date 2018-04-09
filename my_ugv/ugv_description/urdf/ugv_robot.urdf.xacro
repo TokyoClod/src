@@ -1,0 +1,145 @@
+<?xml version="1.0"?>
+
+<robot name="ugv_robot"
+    xmlns:xacro="http://www.ros.org/wiki/xacro"
+    xmlns:interface="http://www.ros.org/wiki/xacro">
+    
+    <xacro:include filename="$(find ugv_description)/urdf/ugv_wheel.urdf.xacro" />
+    
+    <!-- Properties (Constants) -->
+    <xacro:property name="M_PI" value="3.14159"/>
+    
+    <xacro:property name="base_size_x" value="0.380" />
+    <xacro:property name="base_size_y" value="0.12" />
+    <xacro:property name="base_size_z" value="0.085" />
+    
+    <xacro:property name="wheel_radius_big" value="0.085" />
+    <xacro:property name="wheel_length" value="0.02" />
+    <xacro:property name="wheel_size_y" value="0.0825" />
+    
+    <xacro:property name="total_width" value="0.297" />
+    <!--    <xacro:property name="wheel_offset_y" value="${(total_width - wheel_size_y) / 2}" />-->
+    <xacro:property name="wheel_offset_y" value="0.1697" />
+    <xacro:property name="wheel_offset_z_from_base_link" value="-0.0" />
+    
+    <xacro:property name="ground_clearance" value="0.05" />
+    
+    <xacro:property name="top_size_x" value="0.3937" />
+    <xacro:property name="top_size_y" value="0.3556" />
+    <xacro:property name="top_size_z" value="0.0020" />
+      
+    
+    <link name="ugv_base_link">
+        <inertial>
+            <mass value="25.0" />
+            <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+            <inertia ixx="0.005" ixy="0.0" ixz="0.0"
+                        iyy="0.005" iyz="0.0" 
+                        izz="0.005" />
+        </inertial>
+        
+        <visual>
+            <origin xyz="0.0 0.0 -0.085" rpy="0 0 0" />
+            <geometry>
+                <!--<box size="${base_size_x} ${base_size_y} ${base_size_z}" />-->
+                <mesh filename="package://ugv_description/meshes/jasmine_ugv/jasmine_ugv.dae"/>
+            </geometry>
+            <material name="Grey" >
+                <color rgba="0.8 0.8 0.8 1"/>
+            </material>
+            
+        </visual>
+        
+        <collision>
+            <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+            <geometry>
+                <box size="${base_size_x} ${base_size_y} ${base_size_z}" />
+            </geometry>
+        </collision>
+    </link>
+
+    <link name="top_link">
+        <inertial>
+            <mass value="0.5" />
+            <origin xyz="0.00 0.00 0.1" rpy="0 1.5708 0" />
+            <inertia ixx="0.005" ixy="0.0" ixz="0.0"
+                        iyy="0.005" iyz="0.0" 
+                        izz="0.005" />
+        </inertial>
+        
+        <visual>
+            <origin xyz="0.00 0.00 0.1" rpy="0 0 0" />
+            <geometry>
+                <!--<box size="${base_size_x} ${base_size_y} ${base_size_z}" />-->
+                <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/>
+            </geometry>
+            
+            
+        </visual>
+        
+        <collision>
+            <origin xyz="0.00 0.00 0.1" rpy="0 0 0" />
+            <geometry>
+                <box size="1 1 0.01" />
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="base_to_top" type="fixed">
+        <parent link="ugv_base_link"/>
+        <child link="top_link"/>
+    </joint>
+    
+    
+    <!--	Add wheels using the hlugv_wheel macro-->
+    
+    <xacro:ugv_wheel parent="ugv_base_link" prefix="left_1" offset_x= "0.0" offset_y = "${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" reflect="1" wheel_radius="${wheel_radius_big}"/>
+    <xacro:ugv_wheel parent="ugv_base_link" prefix="left_2" offset_x= "0.10550" offset_y = "${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" reflect="1" wheel_radius="${wheel_radius_big}"/>
+    
+    <xacro:ugv_wheel parent="ugv_base_link" prefix="right_1" offset_x= "0.0" offset_y = "-${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" reflect="1" wheel_radius="${wheel_radius_big}"/>
+    <xacro:ugv_wheel parent="ugv_base_link" prefix="right_2" offset_x= "-0.10550" offset_y = "-${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" reflect="1" wheel_radius="${wheel_radius_big}"/>       
+    
+    <gazebo reference="ugv_base_link">
+        <material>HLUGV/Green</material>
+    </gazebo>
+
+    <gazebo>
+        <!-- 
+        <plugin name="gazebo_ros_control" filename="libgazebo_ros_control.so">
+            <robotNamespace>/ugv_robot</robotNamespace>
+            <robotSimType>gazebo_ros_control/DefaultRobotHWSim</robotSimType>
+        </plugin>
+        -->
+        <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
+            <alwaysOn>true</alwaysOn>
+            <updateRate>50</updateRate>
+            <leftJoint>left_1_wheel_joint</leftJoint>
+            <rightJoint>right_1_wheel_joint</rightJoint>
+            <wheelSeparation>0.5380</wheelSeparation>
+            <wheelDiameter>0.2410</wheelDiameter>
+            <torque>50</torque>
+            <commandTopic>/ugv/cmd_vel</commandTopic>
+            <robotBaseFrame>ugv_base_link</robotBaseFrame>
+            <legacyMode>false</legacyMode>
+            <odometryTopic>odom</odometryTopic>
+            <odometryFrame>odom</odometryFrame>
+            <publishWheelTF>true</publishWheelTF>
+            <publishWheelJointState>true</publishWheelJointState>
+        </plugin>
+        
+
+        <plugin name="p3d_base_controller" filename="libgazebo_ros_p3d.so">
+            <alwaysOn>true</alwaysOn>
+            <updateRate>50.0</updateRate>
+            <bodyName>ugv_base_link</bodyName>
+            <topicName>ugv_ground_truth/state</topicName>
+            <gaussianNoise>0.0</gaussianNoise>
+            <frameName>world</frameName>
+            <xyzOffsets>0 0 0</xyzOffsets>
+            <rpyOffsets>0 0 0</rpyOffsets>
+        </plugin>
+
+    </gazebo>     
+        
+    
+</robot>
