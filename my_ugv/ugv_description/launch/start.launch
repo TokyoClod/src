@@ -8,13 +8,11 @@
 
     <include file="$(find gazebo_ros)/launch/empty_world.launch">
         <arg name="gui" value="true"/>
-        <arg name="world_name" value="$(arg world)" />
-    </include>
+        <arg name="world_name" value="$(find ugv_description)/world/my.world" />
+    </include>    
     
-    <include file="$(find ugv_description)/launch/spawn_ugv_robot.launch"/>
+    <include file="$(find ugv_description)/launch/spawn_ugv_robot.launch"/>  
     
-    
-
     <!-- Load joint controller configurations from YAML file to parameter server -->
     <!-- rosparam file="$(find ugv_description)/config/ugv_control.yaml" command="load"/>-->
 
@@ -28,7 +26,4 @@
         <remap from="/joint_states" to="/ugv_robot/joint_states" />
     </node>
     --> 
-    
-      
-
 </launch>
