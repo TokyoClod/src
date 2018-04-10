@@ -121,6 +121,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  include
 )
 
 ## Declare a C++ library
@@ -138,7 +139,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node 
               src/offb_ibvs_node.cpp
-              src/PID_position.h
+              include/PID_position.h
               src/PID_position.cpp)
 
 ## Rename C++ executable without prefix
