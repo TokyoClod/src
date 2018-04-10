@@ -31,11 +31,11 @@
     
     <link name="ugv_base_link">
         <inertial>
-            <mass value="25.0" />
+            <mass value="10.0" />
             <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
-            <inertia ixx="0.005" ixy="0.0" ixz="0.0"
-                        iyy="0.005" iyz="0.0" 
-                        izz="0.005" />
+            <inertia ixx="0.13" ixy="0.0" ixz="0.0"
+                        iyy="0.13" iyz="0.0" 
+                        izz="0.13" />
         </inertial>
         
         <visual>
@@ -62,9 +62,9 @@
         <inertial>
             <mass value="0.5" />
             <origin xyz="0.00 0.00 0.1" rpy="0 1.5708 0" />
-            <inertia ixx="0.005" ixy="0.0" ixz="0.0"
-                        iyy="0.005" iyz="0.0" 
-                        izz="0.005" />
+            <inertia ixx="0.08" ixy="0.0" ixz="0.0"
+                        iyy="0.08" iyz="0.0" 
+                        izz="0.08" />
         </inertial>
         
         <visual>
@@ -130,7 +130,7 @@
 
         <plugin name="p3d_base_controller" filename="libgazebo_ros_p3d.so">
             <alwaysOn>true</alwaysOn>
-            <updateRate>50.0</updateRate>
+            <updateRate>30.0</updateRate>
             <bodyName>ugv_base_link</bodyName>
             <topicName>ugv_ground_truth/state</topicName>
             <gaussianNoise>0.0</gaussianNoise>
