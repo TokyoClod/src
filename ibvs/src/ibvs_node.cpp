@@ -26,10 +26,10 @@
 
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include "apriltag.h"
-#include "tag36h11.h"
-#include "tag36artoolkit.h"
-#include "common/getopt.h"
+#include "apriltag/apriltag.h"
+#include "apriltag/tag36h11.h"
+#include "apriltag/tag36artoolkit.h"
+#include <apriltag/common/getopt.h>
 #include <tf/transform_listener.h>
 
 using namespace std;
@@ -40,7 +40,7 @@ vpImage<unsigned char> dst;
 geometry_msgs::TwistStamped vel_skew;
 cv_bridge::CvImageConstPtr cv_ptr;
 vpHomogeneousMatrix wMc, wMu;
-geometry_msgs::Pose ugv_pose;
+geometry_msgs::Pose ugv_pose, uav_pose;
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {   
@@ -61,6 +61,12 @@ void ugv_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_ugv_odom){
     wMu = visp_bridge::toVispHomogeneousMatrix(ugv_pose);
 }
 
+void uav_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_uav_odom){
+    nav_msgs::Odometry uav_odom = *msg_uav_odom;
+    uav_pose = uav_odom.pose.pose;
+    wMc = visp_bridge::toVispHomogeneousMatrix(uav_pose);
+}
+
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "ibvs_node");
@@ -74,13 +80,14 @@ int main(int argc, char** argv)
 
     sensor_msgs::Image img_out;
     image_transport::ImageTransport it(nh);
-    image_transport::CameraSubscriber camera_image = it.subscribeCamera("/iris_down_cam/downward_cam/image_raw", 1, imageCallback);
+    image_transport::CameraSubscriber camera_image = it.subscribeCamera("/iris/camera_downward/image_raw", 10, imageCallback);
     //image_transport::Publisher img_pub = it.advertise("Output_camera_image",1);
-    image_transport::Publisher outimg_pub = it.advertise("out_image", 1);
+    image_transport::Publisher outimg_pub = it.advertise("/out_image", 10);
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::TwistStamped>("tag_velocity_skew",10);
     ros::Publisher track_state_pub = nh.advertise<std_msgs::Int8>("tag_tracker_status",10);
-    ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 10, camera_pose_cb);
-    ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);
+    // ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 10, camera_pose_cb);
+    // ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
+    ros::Subscriber uav_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth", 10, uav_pos_cb);
     
     // Initialize tag detector with options
     apriltag_family_t *tf = NULL;
@@ -103,21 +110,21 @@ int main(int argc, char** argv)
 
     vpServo task ;
     task.setServo(vpServo::EYEINHAND_CAMERA);
-    task.setInteractionMatrixType(vpServo::CURRENT);
+    task.setInteractionMatrixType(vpServo::MEAN);
 
     double lambda0,lambdaoo,lambda0_d;
     ros::param::get("~lambda0", lambda0);
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(lambda);
+    task.setLambda(0.5);
 
     //double Zd = 1.074;  
     ros::spinOnce();
-    vpFeaturePoint pp[4], pd[4] ;
+    vpFeaturePoint pp[5], pd[5] ;
     cout<<"px:"<<cam.get_px()<<", py:"<<cam.get_py()<<endl;
 
-    //double target_pixel_size = 200;
+    //double target_pixel_size
     //double target_real_size = 0.80;
     double u_1 = (640 + target_pixel_size) / 2.0;
     double v_1 = (480 + target_pixel_size) / 2.0;
@@ -133,18 +140,20 @@ int main(int argc, char** argv)
     pd[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pd[2].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pd[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
+    pd[4].buildFrom(0, 0, Zd);
 
     pp[0].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pp[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pp[2].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     pp[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
+    pp[4].buildFrom(0, 0, Zd);
     
     #ifdef VISP_HAVE_DISPLAY
         vpPlot plotter(2, 250*2, 500, 100, 200, "Real time curves plotter");
         plotter.setTitle(0, "Visual features error");
         plotter.setTitle(1, "Camera velocities");
 
-        plotter.initGraph(0, 8);
+        plotter.initGraph(0, 10);
         plotter.initGraph(1, 6);
 
         plotter.setLegend(0, 0, "x1");
@@ -155,6 +164,8 @@ int main(int argc, char** argv)
         plotter.setLegend(0, 5, "y3");
         plotter.setLegend(0, 6, "x4");
         plotter.setLegend(0, 7, "y4");
+        plotter.setLegend(0, 8, "x5");
+        plotter.setLegend(0, 9, "y5");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -164,28 +175,29 @@ int main(int argc, char** argv)
         plotter.setLegend(1, 5, "w_z");
     #endif
 
-    /*
-    vpImagePoint point[4];
-    point[0].set_u(420);point[0].set_v(340);
-    point[1].set_u(420);point[0].set_v(140);
-    point[2].set_u(220);point[0].set_v(140);
-    point[3].set_u(220);point[0].set_v(340);*/
-    for (unsigned int i = 0 ; i < 4 ; i++) {
+    
+    // vpImagePoint point[4];
+    // point[0].set_u(420);point[0].set_v(340);
+    // point[1].set_u(420);point[0].set_v(140);
+    // point[2].set_u(220);point[0].set_v(140);
+    // point[3].set_u(220);point[0].set_v(340);
+    for (unsigned int i = 0 ; i < 5 ; i++) {
 
-        //vpFeatureBuilder::create(pd[i], cam, point[i]);
-        //vpFeatureBuilder::create(pp[i], cam, point[i]);
+        // vpFeatureBuilder::create(pd[i], cam, point[i]);
+        // vpFeatureBuilder::create(pp[i], cam, point[i]);
         task.addFeature(pp[i], pd[i]);
         cout<<"pd["<<i<<"]=:"<<pd[i].get_x()<<","<<pd[i].get_y()<<","<<pd[i].get_Z()<<endl;
     }
 
     //ibvs ends
 
-    tf::TransformListener listener;
+    // tf::TransformListener listener;
 
     Mat frame, gray;
     unsigned int iter = 0;
     while(ros::ok())
     {
+        ros::spinOnce();
         ros::Time begin =ros::Time::now();
         //frame = cv_ptr->image;
         cvtColor(cv_ptr->image, gray, COLOR_BGR2GRAY);
@@ -231,8 +243,11 @@ int main(int argc, char** argv)
             putText(cv_ptr->image, text, Point(det->c[0]-textsize.width/2,
                                        det->c[1]+textsize.height/2),
                     fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
-
+        
             // update the feature points
+            double Z1 = target_real_size / abs(det->p[0][1] - det->p[1][1]) * cam.get_px(); //需要更稳定的估计方法
+            double Z = double(uav_pose.position.z) - 0.17;
+            cout<< "Z1:" << Z1 << " Z:" << Z << endl;
             for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
                 //point[i].track(cMo);
                 stringstream ss;
@@ -242,12 +257,12 @@ int main(int argc, char** argv)
                                        det->p[i][1]-5),
                     fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
                 double X = (det->p[i][0]-u0) / cam.get_px();
-                double Y = (det->p[i][1]-v0) / cam.get_py();
-                double Z = 0.8 / abs(det->p[0][1] - det->p[1][1]) * cam.get_px();
+                double Y = (det->p[i][1]-v0) / cam.get_py();          
                 pp[i].buildFrom(X, Y, Z);            
                 //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
-            }  
-                        
+            }
+            pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
+            delete det;                     
         }
         
         
@@ -257,7 +272,7 @@ int main(int argc, char** argv)
             vpColVector v = task.computeControlLaw();
             double e = ( task.getError() ).sumSquare();
             cout<<"e=:"<<e<<endl;
-            vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix( vpRzyxVector(-1.5708, 0, 3.1416))); 
+            vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
             vpVelocityTwistMatrix fVc;
             //fVc.buildFrom((wMc*cMo).inverse() * wMu);
             fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
@@ -293,17 +308,17 @@ int main(int argc, char** argv)
         //ibvs end
         iter++;
         zarray_destroy(detections);
-        //imshow("Tag Detections", cv_ptr->image);
+        // imshow("Tag Detections", cv_ptr->image);
         outimg_pub.publish(cv_ptr->toImageMsg());
 
         ros::Time end = ros::Time::now();
-        ROS_INFO("%f ms",1000*(end-begin).toSec());
+        // ROS_INFO("%f ms",1000*(end-begin).toSec());
         vel_pub.publish(vel_skew);
-        //cv_bridge::CvImage::toImageMsg();
-        //imshow("Tag Detections", frame);
-        //cout<<"track_state:"<<track_state<<endl;
+        // cv_bridge::CvImage::toImageMsg();
+        // imshow("Tag Detections", frame);
+        // cout<<"track_state:"<<track_state<<endl;
         track_state_pub.publish(track_state);
-        //waitKey(30);
+        // waitKey(30);
         ros::spinOnce();
         rate.sleep();
     }
