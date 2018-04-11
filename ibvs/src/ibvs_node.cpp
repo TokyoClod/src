@@ -245,8 +245,10 @@ int main(int argc, char** argv)
                     fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
         
             // update the feature points
-            double Z1 = target_real_size / abs(det->p[0][1] - det->p[1][1]) * cam.get_px(); //需要更稳定的估计方法
-            double Z = double(uav_pose.position.z) - 0.17;
+            double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
+                          + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
+            double Z = target_real_size / temp * cam.get_px(); //需要更稳定的估计方法
+            double Z1 = double(uav_pose.position.z) - 0.17;
             cout<< "Z1:" << Z1 << " Z:" << Z << endl;
             for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
                 //point[i].track(cMo);
