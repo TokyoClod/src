@@ -7,9 +7,13 @@ project(pbvs)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
+<<<<<<< HEAD
 find_package(catkin REQUIRED COMPONENTS
   roscpp
 )
+=======
+find_package(catkin REQUIRED)
+>>>>>>> 1ed197d8630549cde433adb20c912a0ecf9937a6
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -103,7 +107,11 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES pbvs
+<<<<<<< HEAD
 #  CATKIN_DEPENDS roscpp
+=======
+#  CATKIN_DEPENDS other_catkin_pkg
+>>>>>>> 1ed197d8630549cde433adb20c912a0ecf9937a6
 #  DEPENDS system_lib
 )
 
@@ -115,7 +123,11 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
 # include
+<<<<<<< HEAD
   ${catkin_INCLUDE_DIRS}
+=======
+# ${catkin_INCLUDE_DIRS}
+>>>>>>> 1ed197d8630549cde433adb20c912a0ecf9937a6
 )
 
 ## Declare a C++ library
