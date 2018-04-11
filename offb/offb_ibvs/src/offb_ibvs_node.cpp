@@ -82,7 +82,7 @@ int main(int argc, char **argv)
             ("/mavros/local_position/velocity", 10, camera_vel_cb); 
 
     //the setpoint publishing rate MUST be faster than 2Hz
-    ros::Rate rate(20.0);/*
+    ros::Rate rate(10.0);/*
     PID_position pid_1(1,0,0.);
     PID_position pid_2(1,0,0.);
     PID_position pid_3(1,0,0.);

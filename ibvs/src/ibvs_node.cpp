@@ -71,7 +71,7 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "ibvs_node");
     ros::NodeHandle nh;
-    ros::Rate rate(20.0);
+    ros::Rate rate(10.0);
 
     double target_pixel_size, target_real_size;
 
@@ -121,7 +121,7 @@ int main(int argc, char** argv)
 
     //double Zd = 1.074;  
     ros::spinOnce();
-    vpFeaturePoint pp[5], pd[5] ;
+    vpFeaturePoint pp[4], pd[4] ;
     cout<<"px:"<<cam.get_px()<<", py:"<<cam.get_py()<<endl;
 
     //double target_pixel_size
@@ -140,20 +140,20 @@ int main(int argc, char** argv)
     pd[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pd[2].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pd[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
-    pd[4].buildFrom(0, 0, Zd);
+    // pd[4].buildFrom(0, 0, Zd);
 
     pp[0].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pp[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
     pp[2].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     pp[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
-    pp[4].buildFrom(0, 0, Zd);
+    // pp[4].buildFrom(0, 0, Zd);
     
     #ifdef VISP_HAVE_DISPLAY
         vpPlot plotter(2, 250*2, 500, 100, 200, "Real time curves plotter");
         plotter.setTitle(0, "Visual features error");
         plotter.setTitle(1, "Camera velocities");
 
-        plotter.initGraph(0, 10);
+        plotter.initGraph(0, 8);
         plotter.initGraph(1, 6);
 
         plotter.setLegend(0, 0, "x1");
@@ -164,8 +164,8 @@ int main(int argc, char** argv)
         plotter.setLegend(0, 5, "y3");
         plotter.setLegend(0, 6, "x4");
         plotter.setLegend(0, 7, "y4");
-        plotter.setLegend(0, 8, "x5");
-        plotter.setLegend(0, 9, "y5");
+        // plotter.setLegend(0, 8, "x5");
+        // plotter.setLegend(0, 9, "y5");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -181,7 +181,7 @@ int main(int argc, char** argv)
     // point[1].set_u(420);point[0].set_v(140);
     // point[2].set_u(220);point[0].set_v(140);
     // point[3].set_u(220);point[0].set_v(340);
-    for (unsigned int i = 0 ; i < 5 ; i++) {
+    for (unsigned int i = 0 ; i < 4 ; i++) {
 
         // vpFeatureBuilder::create(pd[i], cam, point[i]);
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
@@ -248,8 +248,8 @@ int main(int argc, char** argv)
             double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
                           + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
             double Z = target_real_size / temp * cam.get_px(); //需要更稳定的估计方法
-            double Z1 = double(uav_pose.position.z) - 0.17;
-            cout<< "Z1:" << Z1 << " Z:" << Z << endl;
+            // double Z1 = double(uav_pose.position.z) - 0.17;
+            // cout<< "Z1:" << Z1 << " Z:" << Z << endl;
             for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
                 //point[i].track(cMo);
                 stringstream ss;
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
                 pp[i].buildFrom(X, Y, Z);            
                 //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
             }
-            pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
+            // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
             delete det;                     
         }
         
@@ -313,8 +313,6 @@ int main(int argc, char** argv)
         // imshow("Tag Detections", cv_ptr->image);
         outimg_pub.publish(cv_ptr->toImageMsg());
 
-        ros::Time end = ros::Time::now();
-        // ROS_INFO("%f ms",1000*(end-begin).toSec());
         vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
@@ -323,6 +321,8 @@ int main(int argc, char** argv)
         // waitKey(30);
         ros::spinOnce();
         rate.sleep();
+        ros::Time end = ros::Time::now();
+        ROS_INFO("%f ms",1000*(end-begin).toSec());
     }
     plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/error.dat", "matlab");
     plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
