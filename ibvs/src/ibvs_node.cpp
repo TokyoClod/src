@@ -32,6 +32,7 @@
 #include <apriltag/common/getopt.h>
 #include <tf/transform_listener.h>
 
+#include <PID_position.h>
 using namespace std;
 using namespace cv;
 
@@ -117,7 +118,13 @@ int main(int argc, char** argv)
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(0.5);
+    task.setLambda(lambda);
+
+    double controller_P,controller_I,controller_D;
+    ros::param::get("~controller_P", controller_P);
+    ros::param::get("~controller_I", controller_I);
+    ros::param::get("~controller_D", controller_D);
+    PID_position pid(controller_P, controller_I, controller_D);
 
     //double Zd = 1.074;  
     ros::spinOnce();
@@ -270,8 +277,19 @@ int main(int argc, char** argv)
         
         // ibvs part
         if (zarray_size(detections) > 0){ 
-            track_state.data = 1;            
-            vpColVector v = task.computeControlLaw();
+            track_state.data = 1;   
+            /**************  Using IBVS with PID ***********/
+            vpColVector pre_error = task.computeError();
+            unsigned int dimError = pre_error.getRows();
+            vpColVector new_error(dimError);
+            for (unsigned int k = 0; k <  dimError; k++) {
+                new_error[k] = pid.pid_control(pre_error[k]);
+                // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+            }
+            task.setError(new_error);
+            vpColVector v = task.computeControlLaw_pid();
+
+            // vpColVector v = task.computeControlLaw();
             double e = ( task.getError() ).sumSquare();
             cout<<"e=:"<<e<<endl;
             vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 

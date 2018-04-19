@@ -132,6 +132,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  include
 )
 
 ## Declare a C++ library
@@ -147,7 +148,7 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(${PROJECT_NAME}_node src/ibvs_node.cpp)
+add_executable(${PROJECT_NAME}_node src/ibvs_node.cpp src/PID_position.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
