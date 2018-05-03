@@ -290,8 +290,8 @@ int main(int argc, char** argv)
             vpColVector v = task.computeControlLaw_pid();
 
             // vpColVector v = task.computeControlLaw();
-            double e = ( task.getError() ).sumSquare();
-            cout<<"e=:"<<e<<endl;
+            // double e = ( task.getError() ).sumSquare();
+            // cout<<"e=:"<<e<<endl;
             vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
             vpVelocityTwistMatrix fVc;
             //fVc.buildFrom((wMc*cMo).inverse() * wMu);
