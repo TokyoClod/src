@@ -20,6 +20,7 @@
 #include <visp3/visual_features/vpFeatureBuilder.h>
 #include <visp3/visual_features/vpFeatureThetaU.h>
 #include <visp3/visual_features/vpGenericFeature.h>
+#include <visp3/visual_features/vpFeaturePoint.h>
 #include <visp3/vs/vpServo.h>
 #include <visp3/core/vpImagePoint.h>
 #include <visp3/core/vpVelocityTwistMatrix.h>
@@ -61,6 +62,7 @@ void ugv_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_ugv_odom){
     nav_msgs::Odometry ugv_odom = *msg_ugv_odom;
     ugv_pose = ugv_odom.pose.pose;
     wMu = visp_bridge::toVispHomogeneousMatrix(ugv_pose);
+    // cout<< "wMu:" << endl << wMu << endl;
     // tu_ugv.buildFrom(wMu);
 }
 
@@ -90,7 +92,7 @@ int main(int argc, char** argv)
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::TwistStamped>("tag_velocity_skew",10);
     ros::Publisher track_state_pub = nh.advertise<std_msgs::Int8>("tag_tracker_status",10);
     // ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 10, camera_pose_cb);
-    // ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
+    ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
     ros::Subscriber uav_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth", 10, uav_pos_cb);
     
     // Initialize tag detector with options
@@ -133,6 +135,9 @@ int main(int argc, char** argv)
 
     //double Zd = 1.074;  
     ros::spinOnce();
+
+    /********************** First feature (x,y) ***********************/
+    #pragma region firstfeature
     vpFeaturePoint pp[4], pd[4] ;
     cout<<"px:"<<cam.get_px()<<", py:"<<cam.get_py()<<endl;
 
@@ -159,23 +164,39 @@ int main(int argc, char** argv)
     pp[2].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     pp[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     // pp[4].buildFrom(0, 0, Zd);
-    
-    // vpGenericFeature logZ(1);
-    // logZ.set_s(log(5 / Zd));
+    #pragma endregion firstfeature
 
-    vpPoseVector cd_r_o(0, 0, 0, vpMath::rad(0), vpMath::rad(0), vpMath::rad(0));
-    vpHomogeneousMatrix cdMo(cd_r_o);
+
+    /********************** Second feature log (Z/Zd) ***********************/
+    // #pragma region secondfeature
+    // vpGenericFeature logZ(1);
+    // logZ.set_s(log(5.0 / Zd));
+
+    // // vpFeaturePoint3D Z();
+    // // // want to see it one meter away (here again use pd)
+    // // vpFeaturePoint3D Zd();
+
+    // #pragma endregion secondfeature
+
+
+    /********************** 3rd feature ThetaU ***********************/
+    #pragma region thirdfeature
+    // vpPoseVector cd_r_o(0, 0, Zd, vpMath::rad(0), vpMath::rad(0), vpMath::rad(0)); //need to fix
+    vpHomogeneousMatrix cdMu(vpTranslationVector(0, 0, -Zd + 0.12), vpRotationMatrix(0, 0, 0));//vpRzyxVector(-1.5708, 0,  3.1416)
+    // vpHomogeneousMatrix cdMo(cd_r_o);
     vpHomogeneousMatrix cdMc;
-    cdMc = cdMo * wMu.inverse() * wMc;
+    cdMc = cdMu * (wMu.inverse()) * wMc;
     vpFeatureThetaU tu(vpFeatureThetaU::cdRc);
     tu.buildFrom(cdMc);
+    #pragma endregion thirdfeature
+
 
     #ifdef VISP_HAVE_DISPLAY
         vpPlot plotter(2, 250*2, 500, 100, 200, "Real time curves plotter");
         plotter.setTitle(0, "Visual features error");
         plotter.setTitle(1, "Camera velocities");
 
-        plotter.initGraph(0, 8);
+        plotter.initGraph(0, 11);
         plotter.initGraph(1, 6);
 
         plotter.setLegend(0, 0, "x1");
@@ -186,8 +207,9 @@ int main(int argc, char** argv)
         plotter.setLegend(0, 5, "y3");
         plotter.setLegend(0, 6, "x4");
         plotter.setLegend(0, 7, "y4");
-        // plotter.setLegend(0, 8, "x5");
-        // plotter.setLegend(0, 9, "y5");
+        plotter.setLegend(0, 8, "tu0");
+        plotter.setLegend(0, 9, "tu1");
+        plotter.setLegend(0, 10, "tu2");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -204,7 +226,6 @@ int main(int argc, char** argv)
     // point[2].set_u(220);point[0].set_v(140);
     // point[3].set_u(220);point[0].set_v(340);
     for (unsigned int i = 0 ; i < 4 ; i++) {
-
         // vpFeatureBuilder::create(pd[i], cam, point[i]);
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
         task.addFeature(pp[i], pd[i]);
@@ -212,7 +233,7 @@ int main(int argc, char** argv)
     }
     // task.addFeature(logZ);
     task.addFeature(tu);
-
+    task.print();
     //ibvs ends
 
     // tf::TransformListener listener;
@@ -288,7 +309,8 @@ int main(int argc, char** argv)
                 //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
             }
 
-            cdMc = cdMo * wMu.inverse() * wMc;
+            // cdMc = cdMu * wMu.inverse() * wMc;
+            cdMc = cdMu * (wMu.inverse()) * wMc;
             tu.buildFrom(cdMc);
 
             // logZ.set_s(log(Z / Zd));
@@ -298,6 +320,7 @@ int main(int argc, char** argv)
             // LlogZ[0][3] = -pp[0].get_y();
             // LlogZ[0][4] = pp[0].get_x();
             // logZ.setInteractionMatrix(LlogZ);
+            
             // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
             delete det;                     
         }
@@ -320,12 +343,18 @@ int main(int argc, char** argv)
 
             /**************  Using IBVS without PID ***********/
             vpColVector v = task.computeControlLaw();
-            double e = ( task.getError() ).sumSquare();
+            // task.print(vpServo::FEATURE_CURRENT);
+            // task.print(vpServo::FEATURE_DESIRED);
+            // double e = ( task.getError() ).sumSquare();
             // cout << "e=:" << e << endl;
-            vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
+            vpHomogeneousMatrix wfc(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416)));
+            // vpHomogeneousMatrix cMo;
+            // cMo = wMc.inverse() * wMu;
+            // cout<< "cMo:" << endl << cMo << endl;
+            
             vpVelocityTwistMatrix fVc;
             //fVc.buildFrom((wMc*cMo).inverse() * wMu);
-            fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
+            fVc.buildFrom((wMc*wfc)); //transfer the velocity from camera frame to Fixed World Frame
             vpColVector f_v(6);
             // vpColVector f_omega(3);
             //cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
@@ -369,7 +398,7 @@ int main(int argc, char** argv)
         ros::spinOnce();
         rate.sleep();
         ros::Time end = ros::Time::now();
-        ROS_INFO("%f ms",1000*(end-begin).toSec());
+        // ROS_INFO("%f ms",1000*(end-begin).toSec());
     }
     plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/error.dat", "matlab");
     plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
