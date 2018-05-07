@@ -3,7 +3,7 @@
  * @brief offboard example node, written with mavros version 0.14.2, px4 flight
  * stack and tested in Gazebo SITL
  */
-
+#include <iostream>
 #include "std_msgs/Int8.h"
 #include "std_msgs/String.h"
 #include <ros/ros.h>
@@ -19,11 +19,14 @@
 
 #include <camera_calibration_parsers/parse.h>
 
+#include <tf/transform_broadcaster.h>
+
 mavros_msgs::State fcu_state;
 std_msgs::Int8 track_state;
 geometry_msgs::PoseStamped object_pose;
 geometry_msgs::PoseStamped camera_pose;
 geometry_msgs::Point circle_center;
+geometry_msgs::TwistStamped vel_skew;
 
 std_msgs::Int8 theta,Rad;
 
@@ -52,6 +55,10 @@ int main(int argc, char **argv)
             ("mavros/state", 10, state_cb);
     ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("mavros/setpoint_position/local", 10);
+    
+    ros::Publisher local_vel_pub = nh.advertise<geometry_msgs::TwistStamped>
+            ("/mavros/setpoint_velocity/cmd_vel",10);
+
     ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
             ("mavros/cmd/arming");
     ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
@@ -100,8 +107,6 @@ int main(int argc, char **argv)
 
     
     Rad.data=1;
-    ros::Publisher local_vel_pub = nh.advertise<geometry_msgs::TwistStamped>
-            ("/mavros/setpoint_velocity/cmd_vel",10);
 
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(20.0);
@@ -116,6 +121,7 @@ int main(int argc, char **argv)
     pose.pose.position.x = 0;
     pose.pose.position.y = 0;
     pose.pose.position.z = 1.5;
+    pose.pose.orientation = tf::createQuaternionMsgFromYaw(90 * 3.1416 / 180);
     //pose.pose.orientation.x = 3.1415;
 
 
@@ -143,7 +149,7 @@ int main(int argc, char **argv)
     ros::Time last_request = ros::Time::now();
 
     //std_msgs::String mode_now;  
-
+    int iter = 0;
     while(ros::ok()){
         if( fcu_state.mode != "OFFBOARD" &&
             (ros::Time::now() - last_request > ros::Duration(5.0))){
@@ -189,20 +195,36 @@ int main(int argc, char **argv)
                        circle_center = camera_pose.pose.position;
                    }
                    else{
-                        theta.data+=(36*0.05);
-                        //pose.pose.position.x = circle_center.x + cos(Rad.data*theta.data*3.14159/180);
-                        //pose.pose.position.y = circle_center.y + sin(Rad.data*theta.data*3.14159/180);
-                        //pose.pose.position.z = 1.5; 
-                        pose.pose.position.x = 0;
-                        pose.pose.position.y = 0;
-                        pose.pose.position.z = 1.5; 
+                       std::cout<<iter<<std::endl;
+                       if (iter < 200){   
+                            theta.data+=(36*0.05);
+                            //pose.pose.position.x = circle_center.x + cos(Rad.data*theta.data*3.14159/180);
+                            //pose.pose.position.y = circle_center.y + sin(Rad.data*theta.data*3.14159/180);
+                            //pose.pose.position.z = 1.5; 
+                            pose.pose.position.x = 0;
+                            pose.pose.position.y = 0;
+                            pose.pose.position.z = 1.5; 
+                        }
+                        else{
+                            vel_skew.twist.linear.x = 0;
+                            vel_skew.twist.linear.y = 0;
+                            vel_skew.twist.linear.z = 0;
+                            vel_skew.twist.angular.z = 0.5;
+                        }
                    }
+                   iter ++;
                 } 
             
         }
+        if (iter < 200){
+            local_pos_pub.publish(pose);
+            }
+        else{
+            local_vel_pub.publish(vel_skew);
+        }
         //ROS_INFO("Next Loop");
         //local_vel_pub.publish(vel);
-        local_pos_pub.publish(pose);
+        // local_pos_pub.publish(pose);
 
         ros::spinOnce();
         rate.sleep();
