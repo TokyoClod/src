@@ -118,14 +118,14 @@ int main(int argc, char** argv)
 
     vpServo task ;
     task.setServo(vpServo::EYEINHAND_CAMERA);
-    task.setInteractionMatrixType(vpServo::MEAN);
+    task.setInteractionMatrixType(vpServo::CURRENT);
 
     double lambda0,lambdaoo,lambda0_d;
     ros::param::get("~lambda0", lambda0);
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(0.5);
+    task.setLambda(0.75);
 
     double controller_P,controller_I,controller_D;
     ros::param::get("~controller_P", controller_P);
@@ -169,14 +169,16 @@ int main(int argc, char** argv)
 
     /********************** Second feature log (Z/Zd) ***********************/
     // #pragma region secondfeature
-    // vpGenericFeature logZ(1);
-    // logZ.set_s(log(5.0 / Zd));
+    // vpGenericFeature logZd(1);
+    // logZd.set_s(log(Zd));
+    // double x = 0; //The x coordinate of the current point.
+    // double y = 0; //The y coordinate of the current point.
+    // double Z = 5; //The depth of the current point.
+    // vpGenericFeature logZ(1); //The dimension of the feature is 1.
+    // logZ.set_s( log(Z) );
 
-    // // vpFeaturePoint3D Z();
-    // // // want to see it one meter away (here again use pd)
-    // // vpFeaturePoint3D Zd();
 
-    // #pragma endregion secondfeature
+    #pragma endregion secondfeature
 
 
     /********************** 3rd feature ThetaU ***********************/
@@ -196,20 +198,21 @@ int main(int argc, char** argv)
         plotter.setTitle(0, "Visual features error");
         plotter.setTitle(1, "Camera velocities");
 
-        plotter.initGraph(0, 11);
+        plotter.initGraph(0, 3);
         plotter.initGraph(1, 6);
 
-        plotter.setLegend(0, 0, "x1");
-        plotter.setLegend(0, 1, "y1");
-        plotter.setLegend(0, 2, "x2");
-        plotter.setLegend(0, 3, "y2");
-        plotter.setLegend(0, 4, "x3");
-        plotter.setLegend(0, 5, "y3");
-        plotter.setLegend(0, 6, "x4");
-        plotter.setLegend(0, 7, "y4");
-        plotter.setLegend(0, 8, "tu0");
-        plotter.setLegend(0, 9, "tu1");
-        plotter.setLegend(0, 10, "tu2");
+        // plotter.setLegend(0, 0, "x1");
+        // plotter.setLegend(0, 1, "y1");
+        // plotter.setLegend(0, 2, "x2");
+        // plotter.setLegend(0, 3, "y2");
+        // plotter.setLegend(0, 4, "x3");
+        // plotter.setLegend(0, 5, "y3");
+        // plotter.setLegend(0, 6, "x4");
+        // plotter.setLegend(0, 7, "y4");
+        // plotter.setLegend(0, 8, "Z");
+        plotter.setLegend(0, 0, "tu0");
+        plotter.setLegend(0, 1, "tu1");
+        plotter.setLegend(0, 2, "tu2");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -228,10 +231,10 @@ int main(int argc, char** argv)
     for (unsigned int i = 0 ; i < 4 ; i++) {
         // vpFeatureBuilder::create(pd[i], cam, point[i]);
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
-        task.addFeature(pp[i], pd[i]);
+        // task.addFeature(pp[i], pd[i]);
         cout<<"pd["<<i<<"]=:"<<pd[i].get_x()<<","<<pd[i].get_y()<<","<<pd[i].get_Z()<<endl;
     }
-    // task.addFeature(logZ);
+    // task.addFeature(logZ, logZd);
     task.addFeature(tu);
     task.print();
     //ibvs ends
@@ -309,14 +312,14 @@ int main(int argc, char** argv)
                 //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
             }
 
-            // cdMc = cdMu * wMu.inverse() * wMc;
             cdMc = cdMu * (wMu.inverse()) * wMc;
+            cout<< "cdMc:\n" << cdMc << endl;
             tu.buildFrom(cdMc);
 
-            // logZ.set_s(log(Z / Zd));
+            // logZ.set_s(log(Z));
             // vpMatrix LlogZ(1, 6);
             // LlogZ[0][0] = LlogZ[0][1] = LlogZ[0][5] = 0;
-            // LlogZ[0][2] = -1 / pp[0].get_Z();
+            // LlogZ[0][2] = -1 / Z;
             // LlogZ[0][3] = -pp[0].get_y();
             // LlogZ[0][4] = pp[0].get_x();
             // logZ.setInteractionMatrix(LlogZ);
@@ -362,9 +365,9 @@ int main(int argc, char** argv)
             f_v = fVc * v;
             // f_omega = - 0.5 * fVc * (tu_uav - tu_ugv);
             
-            vel_skew.twist.linear.x = f_v[0];
-            vel_skew.twist.linear.y = f_v[1];
-            vel_skew.twist.linear.z = f_v[2];
+            // vel_skew.twist.linear.x = f_v[0];
+            // vel_skew.twist.linear.y = f_v[1];
+            // vel_skew.twist.linear.z = f_v[2];
             //vel_skew.twist.angular.x = f_v[3];
             //vel_skew.twist.angular.y = f_v[4];
             vel_skew.twist.angular.z = f_v[5];
