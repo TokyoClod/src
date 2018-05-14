@@ -195,7 +195,7 @@ int main(int argc, char **argv)
         broadcaster.sendTransform(vel_trans);*/
 
         ros::Time end = ros::Time::now();
-        ROS_INFO("%f ms",1000*(end-begin).toSec());
+        // ROS_INFO("%f ms",1000*(end-begin).toSec());
 
         ros::spinOnce();
         rate.sleep();

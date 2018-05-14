@@ -71,7 +71,8 @@
             <origin xyz="0.00 0.00 0.1" rpy="0 0 0" />
             <geometry>
                 <!--<box size="${base_size_x} ${base_size_y} ${base_size_z}" />-->
-                <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/>
+                <!-- <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/> -->
+                <mesh filename="package://ugv_description/meshes/emb_apriltag/emb_apriltag.dae" scale="1 1 1"/>
             </geometry>
             
             
