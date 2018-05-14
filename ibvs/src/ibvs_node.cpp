@@ -28,6 +28,7 @@
 #include <opencv2/opencv.hpp>
 #include "apriltag/apriltag.h"
 #include "apriltag/tag36h11.h"
+#include "apriltag/tag9h4.h"
 #include "apriltag/tag36artoolkit.h"
 #include <apriltag/common/getopt.h>
 #include <tf/transform_listener.h>
@@ -47,6 +48,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::Cam
 {   
     
     cv_ptr = cv_bridge::toCvShare(msg,sensor_msgs::image_encodings::BGR8); 
+    // cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
     //dst = cv_bridge::toVispImage(*msg);
     cam = visp_bridge::toVispCameraParameters(*cam_info);
 }
@@ -92,7 +94,8 @@ int main(int argc, char** argv)
     
     // Initialize tag detector with options
     apriltag_family_t *tf = NULL;
-    tf = tag36h11_create();
+    // tf = tag36h11_create();
+    tf = tag9h4_create();
     tf->black_border = 1;
     cout << "Creating apriltag_detector..." << endl;
     apriltag_detector_t *td = apriltag_detector_create();
@@ -118,7 +121,7 @@ int main(int argc, char** argv)
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(lambda);
+    task.setLambda(0.5);
 
     double controller_P,controller_I,controller_D;
     ros::param::get("~controller_P", controller_P);
@@ -206,131 +209,141 @@ int main(int argc, char** argv)
     {
         ros::spinOnce();
         ros::Time begin =ros::Time::now();
-        //frame = cv_ptr->image;
-        cvtColor(cv_ptr->image, gray, COLOR_BGR2GRAY);
-        //imshow("Convert to Grey", gray);
-        // Make an image_u8_t header for the Mat data
-        image_u8_t im = { .width = gray.cols,
-            .height = gray.rows,
-            .stride = gray.cols,
-            .buf = gray.data
-        };
+        if(cv_ptr)
+        {
+            //frame = cv_ptr->image;
+            cvtColor(cv_ptr->image, gray, COLOR_BGR2GRAY);
+            //imshow("Convert to Grey", gray);
+            // Make an image_u8_t header for the Mat data
+            image_u8_t im = { .width = gray.cols,
+                .height = gray.rows,
+                .stride = gray.cols,
+                .buf = gray.data
+            };
 
-        zarray_t *detections = apriltag_detector_detect(td, &im);
-        //cout << zarray_size(detections) << " tags detected" << endl;
+            zarray_t *detections = apriltag_detector_detect(td, &im);
+            cout << zarray_size(detections) << " tags detected" << endl;
 
-        // Draw detection outlines
-        for (int i = 0; i < zarray_size(detections); i++) {
-            apriltag_detection_t *det;
-            zarray_get(detections, i, &det);
-            //circle(cv_ptr->image,Point(det->p[0][0], det->p[0][1]),r,Scalar(0,0,0));  
-            line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
-                     Point(det->p[1][0], det->p[1][1]),
-                     Scalar(0, 0xff, 0), 2);
-            //cout<<"p0-x"<<det->p[0][0]<<"p0-y"<<det->p[0][1]<<endl;
-            line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
-                     Point(det->p[3][0], det->p[3][1]),
-                     Scalar(0, 0, 0xff), 2);
-            line(cv_ptr->image, Point(det->p[1][0], det->p[1][1]),
-                     Point(det->p[2][0], det->p[2][1]),
-                     Scalar(0xff, 0, 0), 2);
-            line(cv_ptr->image, Point(det->p[2][0], det->p[2][1]),
-                     Point(det->p[3][0], det->p[3][1]),
-                     Scalar(0xff, 0, 0), 2);
-            //cout<<"p0:"<<det->p[0][0]<<", "<<det->p[0][1]<<" p1:"<<det->p[1][0]<<", "<<det->p[1][1]<<" p2:"<<det->p[2][0]<<", "<<det->p[2][1]<<" p3:"<<det->p[3][0]<<", "<<det->p[3][1]<<endl;
-            
-            stringstream ss;
-            ss << det->id;
-            String text = ss.str();
-            int fontface = FONT_HERSHEY_SCRIPT_SIMPLEX;
-            double fontscale = 1.0;
-            int baseline;
-            Size textsize = getTextSize(text, fontface, fontscale, 2,
-                                            &baseline);
-            putText(cv_ptr->image, text, Point(det->c[0]-textsize.width/2,
-                                       det->c[1]+textsize.height/2),
-                    fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
-        
-            // update the feature points
-            double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
-                          + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
-            double Z = target_real_size / temp * cam.get_px(); //需要更稳定的估计方法
-            // double Z1 = double(uav_pose.position.z) - 0.17;
-            // cout<< "Z1:" << Z1 << " Z:" << Z << endl;
-            for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
-                //point[i].track(cMo);
+            // Draw detection outlines
+            for (int i = 0; i < zarray_size(detections); i++) {
+                apriltag_detection_t *det;
+                zarray_get(detections, i, &det);
+                //circle(cv_ptr->image,Point(det->p[0][0], det->p[0][1]),r,Scalar(0,0,0));  
+                line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
+                        Point(det->p[1][0], det->p[1][1]),
+                        Scalar(0, 0xff, 0), 2);
+                //cout<<"p0-x"<<det->p[0][0]<<"p0-y"<<det->p[0][1]<<endl;
+                line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
+                        Point(det->p[3][0], det->p[3][1]),
+                        Scalar(0, 0, 0xff), 2);
+                line(cv_ptr->image, Point(det->p[1][0], det->p[1][1]),
+                        Point(det->p[2][0], det->p[2][1]),
+                        Scalar(0xff, 0, 0), 2);
+                line(cv_ptr->image, Point(det->p[2][0], det->p[2][1]),
+                        Point(det->p[3][0], det->p[3][1]),
+                        Scalar(0xff, 0, 0), 2);
+                //cout<<"p0:"<<det->p[0][0]<<", "<<det->p[0][1]<<" p1:"<<det->p[1][0]<<", "<<det->p[1][1]<<" p2:"<<det->p[2][0]<<", "<<det->p[2][1]<<" p3:"<<det->p[3][0]<<", "<<det->p[3][1]<<endl;
+                
                 stringstream ss;
-                ss<<i;
-                text = ss.str();
-                putText(cv_ptr->image, text, Point(det->p[i][0]-5,
-                                       det->p[i][1]-5),
-                    fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
-                double X = (det->p[i][0]-u0) / cam.get_px();
-                double Y = (det->p[i][1]-v0) / cam.get_py();          
-                pp[i].buildFrom(X, Y, Z);            
-                //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
-            }
-            // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
-            delete det;                     
-        }
-        
-        
-        // ibvs part
-        if (zarray_size(detections) > 0){ 
-            track_state.data = 1;   
-            /**************  Using IBVS with PID ***********/
-            vpColVector pre_error = task.computeError();
-            unsigned int dimError = pre_error.getRows();
-            vpColVector new_error(dimError);
-            for (unsigned int k = 0; k <  dimError; k++) {
-                new_error[k] = pid.pid_control(pre_error[k]);
-                // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
-            }
-            task.setError(new_error);
-            vpColVector v = task.computeControlLaw_pid();
-
-            // vpColVector v = task.computeControlLaw();
-            // double e = ( task.getError() ).sumSquare();
-            // cout<<"e=:"<<e<<endl;
-            vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
-            vpVelocityTwistMatrix fVc;
-            //fVc.buildFrom((wMc*cMo).inverse() * wMu);
-            fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
-            vpColVector f_v(6);
-            //cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
-            //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
-            f_v = fVc * v;
+                ss << det->id;
+                String text = ss.str();
+                int fontface = FONT_HERSHEY_SCRIPT_SIMPLEX;
+                double fontscale = 1.0;
+                int baseline;
+                Size textsize = getTextSize(text, fontface, fontscale, 2,
+                                                &baseline);
+                putText(cv_ptr->image, text, Point(det->c[0]-textsize.width/2,
+                                        det->c[1]+textsize.height/2),
+                        fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
             
-            vel_skew.twist.linear.x = f_v[0];
-            vel_skew.twist.linear.y = f_v[1];
-            vel_skew.twist.linear.z = f_v[2];
-            //vel_skew.twist.angular.x = rzyx[2];
-            //vel_skew.twist.angular.y = rzyx[1];
-            //vel_skew.twist.angular.z = rzyx[0];
-            //vel_skew.twist.angular.x = f_v[3];
-            //vel_skew.twist.angular.y = f_v[4];
-            vel_skew.twist.angular.z = f_v[5];
+                // update the feature points
+                double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
+                            + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
+                double Z = target_real_size / temp * cam.get_px(); //需要更稳定的估计方法
+                // double Z1 = double(uav_pose.position.z) - 0.17;
+                // cout<< "Z1:" << Z1 << " Z:" << Z << endl;
+                for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
+                    //point[i].track(cMo);
+                    stringstream ss;
+                    ss<<i;
+                    text = ss.str();
+                    putText(cv_ptr->image, text, Point(det->p[i][0]-5,
+                                        det->p[i][1]-5),
+                        fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
+                    double X = (det->p[i][0]-u0) / cam.get_px();
+                    double Y = (det->p[i][1]-v0) / cam.get_py();          
+                    pp[i].buildFrom(X, Y, Z);            
+                    //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
+                }
+                // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
+                delete det;                     
+            }
+            
+            
+            // ibvs part
+            if (zarray_size(detections) > 0){ 
+                track_state.data = 1;   
+                /**************  Using IBVS with PID ***********/
+                // vpColVector pre_error = task.computeError();
+                // unsigned int dimError = pre_error.getRows();
+                // vpColVector new_error(dimError);
+                // for (unsigned int k = 0; k <  dimError; k++) {
+                //     new_error[k] = pid.pid_control(pre_error[k]);
+                //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+                // }
+                // task.setError(new_error);
+                // vpColVector v = task.computeControlLaw_pid();
 
-            #ifdef VISP_HAVE_DISPLAY
-                plotter.plot(0, iter, task.getError());
-                plotter.plot(1, iter, v);
-            #endif
+                /**************  Using IBVS without PID ***********/
+                vpColVector v = task.computeControlLaw();
+                double e = ( task.getError() ).sumSquare();
+                // cout<<"e=:"<<e<<endl;
+
+                vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
+                vpVelocityTwistMatrix fVc;
+                //fVc.buildFrom((wMc*cMo).inverse() * wMu);
+                fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
+                vpColVector f_v(6);
+                //cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
+                //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
+                f_v = fVc * v;
+                
+                vel_skew.twist.linear.x = f_v[0];
+                vel_skew.twist.linear.y = f_v[1];
+                vel_skew.twist.linear.z = f_v[2];
+                //vel_skew.twist.angular.x = rzyx[2];
+                //vel_skew.twist.angular.y = rzyx[1];
+                //vel_skew.twist.angular.z = rzyx[0];
+                //vel_skew.twist.angular.x = f_v[3];
+                //vel_skew.twist.angular.y = f_v[4];
+                vel_skew.twist.angular.z = f_v[5];
+
+                #ifdef VISP_HAVE_DISPLAY
+                    plotter.plot(0, iter, task.getError());
+                    plotter.plot(1, iter, v);
+                #endif
+            }
+            else{
+                track_state.data = 0;
+                vel_skew.twist.linear.x = 0;
+                vel_skew.twist.linear.y = 0;
+                vel_skew.twist.linear.z = 0;
+                vel_skew.twist.angular.x = 0;
+                vel_skew.twist.angular.y = 0;
+                vel_skew.twist.angular.z = 0;
+            }
+            zarray_destroy(detections);
+            outimg_pub.publish(cv_ptr->toImageMsg());
+
         }
-        else{
-            track_state.data = 0;
-            vel_skew.twist.linear.x = 0;
-            vel_skew.twist.linear.y = 0;
-            vel_skew.twist.linear.z = 0;
-            vel_skew.twist.angular.x = 0;
-            vel_skew.twist.angular.y = 0;
-            vel_skew.twist.angular.z = 0;
-        }
+        else{}
+        
+
         //ibvs end
         iter++;
-        zarray_destroy(detections);
+        
         // imshow("Tag Detections", cv_ptr->image);
-        outimg_pub.publish(cv_ptr->toImageMsg());
-
+        
         vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
@@ -340,13 +353,15 @@ int main(int argc, char** argv)
         ros::spinOnce();
         rate.sleep();
         ros::Time end = ros::Time::now();
-        ROS_INFO("%f ms",1000*(end-begin).toSec());
+        // ROS_INFO("%f ms",1000*(end-begin).toSec());
+        // cv_ptr.reset();
     }
     plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/error.dat", "matlab");
     plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
     task.kill();
     apriltag_detector_destroy(td);
-    tag36h11_destroy(tf);
+    // tag36h11_destroy(tf);
+    tag9h4_destroy(tf);
 
     return 0;
 }
