@@ -4,3 +4,6 @@
 [submodule "vision_visp"]
 	path = vision_visp
 	url = git@github.com:TokyoClod/vision_visp.git
+[submodule "teleop_twist_keyboard"]
+	path = my_ugv/teleop_twist_keyboard
+	url = git@github.com:TokyoClod/teleop_twist_keyboard.git
