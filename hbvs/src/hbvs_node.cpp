@@ -30,6 +30,7 @@
 #include <opencv2/opencv.hpp>
 #include "apriltag/apriltag.h"
 #include "apriltag/tag36h11.h"
+#include "apriltag/tag9h4.h"
 #include "apriltag/tag36artoolkit.h"
 #include <apriltag/common/getopt.h>
 #include <tf/transform_listener.h>
@@ -98,7 +99,8 @@ int main(int argc, char** argv)
     // Initialize tag detector with options
     #pragma region Initialize
     apriltag_family_t *tf = NULL;
-    tf = tag36h11_create();
+    // tf = tag36h11_create();
+    tf = tag9h4_create();
     tf->black_border = 1;
     cout << "Creating apriltag_detector..." << endl;
     apriltag_detector_t *td = apriltag_detector_create();
@@ -409,7 +411,8 @@ int main(int argc, char** argv)
     plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
     task.kill();
     apriltag_detector_destroy(td);
-    tag36h11_destroy(tf);
+    // tag36h11_destroy(tf);
+    tag9h4_destroy(tf);
 
     return 0;
 }
