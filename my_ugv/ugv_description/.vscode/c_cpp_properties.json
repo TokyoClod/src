@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "",
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "includePath": [
+        "/home/abner/catkin_ws/devel/include",
+        "/opt/ros/kinetic/include",
+        "/home/abner/catkin_ws/src/apriltags_ros/apriltags/include",
+        "/home/abner/catkin_ws/src/apriltags_ros/apriltags_ros/include",
+        "/home/abner/catkin_ws/src/hbvs/include",
+        "/home/abner/catkin_ws/src/offb/offb/include",
+        "/home/abner/catkin_ws/src/ibvs/include",
+        "/home/abner/catkin_ws/src/offb/offb_apriltag/include",
+        "/home/abner/catkin_ws/src/offb/offb_ibvs/include",
+        "/home/abner/catkin_ws/src/my_ugv/ugv_teleop/include",
+        "/home/abner/catkin_ws/src/vision_visp/visp_bridge/include",
+        "/usr/include"
+      ],
+      "name": "Linux"
+    }
+  ]
+}

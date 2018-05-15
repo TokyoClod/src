@@ -10,7 +10,7 @@
     <node name="spawn_robot_ugv" pkg="gazebo_ros" type="spawn_model"
       args="-param ugv_robot
             -urdf
-            -z 0.15
+            -z 1.0
             -model ugv_robot"
       respawn="false" output="screen" />
 

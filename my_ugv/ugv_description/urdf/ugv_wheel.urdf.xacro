@@ -6,31 +6,42 @@
   <xacro:property name="M_PI" value="3.14159" />
   
   <!--<xacro:property name="wheel_radius" value="0.185" />-->
-  <!--<xacro:property name="wheel_size_y" value="0.0824" />-->
+  <!-- <xacro:property name="wheel_size_y" value="0.5" /> -->
   <!-- half of wheel width + half of socket width + gap -->
-  <xacro:property name="wheel_offset_z" value="-0.112" />
+  <!-- <xacro:property name="wheel_offset_z" value="-0.112" /> -->
   <!-- wheel_radius - socket height -->
   
-  <xacro:macro name="ugv_wheel" params="parent prefix offset_x offset_y offset_z reflect wheel_radius">
+  <xacro:macro name="ugv_wheel" params="parent prefix offset_x offset_y offset_z reflect wheel_radius wheel_size_y">
     
     <joint name="${prefix}_wheel_joint" type="continuous">
       <origin xyz="${offset_x } ${offset_y * reflect} ${offset_z}" rpy="0 0 0" />
       <parent link="${parent}" />
       <child link="${prefix}_wheel_link" />
       <axis xyz="0 1 0" />
-      <limit effort="100" velocity="100" />
+      <limit effort="1000" velocity="1000" />
       <joint_properties damping="0.0" friction="0.0" />
       <anchor xyz="0 0 0" />
     </joint>    
     
     <link name="${prefix}_wheel_link">
       <inertial>
-        <mass value="0.01" />
+        <mass value="12" />
         <origin xyz=" 0 0 0 " />
-        <inertia  ixx="0.00012411765597" ixy="0.0" ixz="0.0"
-                 iyy="0.00015218160428" iyz="0.0"
-                 izz="0.00011763977943" />
-        </inertial>
+        <!-- <inertia  ixx="0.0012411765597" ixy="0.0" ixz="0.0"
+                 iyy="0.0015218160428" iyz="0.0"
+                 izz="0.0011763977943" /> -->
+        <inertia  ixx="0.5" ixy="0.0" ixz="0.0"
+                  iyy="0.5" iyz="0.0"
+                  izz="1" />
+        
+      </inertial>
+
+        <visual>
+          <origin xyz="0 0 0" rpy="${-M_PI/2} 0 0" />
+          <geometry>
+            <cylinder radius="${wheel_radius}" length="${wheel_size_y}" />
+          </geometry>
+        </visual>
         
         <collision>
           <origin xyz="0 0 0" rpy="${-M_PI/2} 0 0" />
@@ -48,7 +59,7 @@
         <kp>1000000.0</kp>
         <kd>100.0</kd>
         <minDepth>0.001</minDepth>
-        <maxVel>1.0</maxVel>         
+        <maxVel>100.0</maxVel>         
         <!--<fdir1>1 0 0</fdir1>-->
         <!--<maxVel>1.0</maxVel>-->
       </gazebo>
