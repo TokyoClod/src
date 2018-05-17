@@ -27,7 +27,7 @@
     
     <link name="${prefix}_wheel_link">
       <inertial>
-        <mass value="0.1" />
+        <mass value="0.01" />
         <origin xyz=" 0 0 0 " />
         <!-- <inertia  ixx="0.0012411765597" ixy="0.0" ixz="0.0"
                  iyy="0.0015218160428" iyz="0.0"
@@ -41,12 +41,12 @@
         
       </inertial>
 
-        <!-- <visual>
+        <visual>
           <origin xyz="0 0 0" rpy="${-M_PI/2} 0 0" />
           <geometry>
             <cylinder radius="${wheel_radius}" length="${wheel_size_y}" />
           </geometry>
-        </visual> -->
+        </visual>
         
         <collision>
           <origin xyz="0 0 0" rpy="${-M_PI/2} 0 0" />

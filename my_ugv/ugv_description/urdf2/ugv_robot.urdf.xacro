@@ -11,17 +11,17 @@
     
     <xacro:property name="base_size_x" value="2.5" />
     <xacro:property name="base_size_y" value="1" />
-    <xacro:property name="base_size_z" value="1.0" />
+    <xacro:property name="base_size_z" value="1.2" />
     
-    <xacro:property name="wheel_radius" value="0.08" />
-    <xacro:property name="wheel_length" value="0.05" />
+    <xacro:property name="wheel_radius" value="0.1" />
+    <xacro:property name="wheel_length" value="0.18" />
     <!-- <xacro:property name="wheel_size_y" value="0.0825" /> -->
     
     <!--    <xacro:property name="wheel_offset_y" value="${(total_width - wheel_size_y) / 2}" />-->
     <!-- <xacro:property name="wheel_offset_y" value="0.48" /> -->
-    <xacro:property name="wheel_offset_x" value="0.15" />
-    <xacro:property name="wheel_offset_y" value="0.48" />
-    <xacro:property name="wheel_offset_z_from_base_link" value="-0.72" />
+    <xacro:property name="wheel_offset_x" value="0.2" />
+    <xacro:property name="wheel_offset_y" value="0.2" />
+    <xacro:property name="wheel_offset_z_from_base_link" value="-0.7" />
       
     
     <link name="ugv_base_link">
@@ -76,19 +76,18 @@
         </inertial>
         
         <visual>
-            <origin xyz="-0.50 0.00 0.5" rpy="0 0 0" />
+            <origin xyz="0.00 0.00 0.5" rpy="0 0 0" />
             <geometry>
                 <!--<box size="${base_size_x} ${base_size_y} ${base_size_z}" />-->
                 <!-- <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/> -->
-                <!-- <mesh filename="package://ugv_description/meshes/emb_apriltag/emb_apriltag.dae" scale="1 1 1"/> -->
-                <mesh filename="package://ugv_description/meshes/embed_apriltag/embed_apriltag.dae" scale="1 1 1"/>
+                <mesh filename="package://ugv_description/meshes/emb_apriltag/emb_apriltag.dae" scale="1 1 1"/>
             </geometry>
             
             
         </visual>
         
         <collision>
-            <origin xyz="-0.50 0.00 0.5" rpy="0 0 0" />
+            <origin xyz="0.00 0.00 0.5" rpy="0 0 0" />
             <geometry>
                 <box size="1 1 0.02" />
             </geometry>
@@ -105,20 +104,13 @@
     
     <xacro:ugv_wheel parent="ugv_base_link" prefix="left_rear" offset_x= "-${wheel_offset_x}" offset_y = "${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
             wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>
-    <xacro:ugv_wheel parent="ugv_base_link" prefix="left_middle" offset_x= "0" offset_y = "${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
-            wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>
     <xacro:ugv_wheel parent="ugv_base_link" prefix="left_front" offset_x= "${wheel_offset_x}" offset_y = "${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
             wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>
     
     <xacro:ugv_wheel parent="ugv_base_link" prefix="right_rear" offset_x= "-${wheel_offset_x}" offset_y = "-${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
             wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>
-    <xacro:ugv_wheel parent="ugv_base_link" prefix="right_middle" offset_x= "0" offset_y = "-${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
-            wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>  
     <xacro:ugv_wheel parent="ugv_base_link" prefix="right_front" offset_x= "${wheel_offset_x}" offset_y = "-${wheel_offset_y}" offset_z = "${wheel_offset_z_from_base_link}" 
-            wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>   
-
-    
-     
+            wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/>     
 
     
 
@@ -136,10 +128,10 @@
         <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
             <alwaysOn>true</alwaysOn>
             <updateRate>50</updateRate>
-            <leftJoint>left_middle_wheel_joint</leftJoint>
-            <rightJoint>right_middle_wheel_joint</rightJoint>
-            <wheelSeparation>0.96</wheelSeparation>
-            <wheelDiameter>0.16</wheelDiameter>
+            <leftJoint>left_front_wheel_joint</leftJoint>
+            <rightJoint>right_front_wheel_joint</rightJoint>
+            <wheelSeparation>0.4</wheelSeparation>
+            <wheelDiameter>0.4</wheelDiameter>
             <torque>5000</torque>
             <commandTopic>/ugv/cmd_vel</commandTopic>
             <robotBaseFrame>ugv_base_link</robotBaseFrame>
