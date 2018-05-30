@@ -18,6 +18,7 @@
 #include <visp_bridge/3dpose.h>
 
 #include <visp3/visual_features/vpFeatureBuilder.h>
+#include <visp3/visual_features/vpGenericFeature.h>
 #include <visp3/vs/vpServo.h>
 #include <visp3/robot/vpSimulatorCamera.h>
 #include <visp3/core/vpImagePoint.h>
@@ -43,6 +44,7 @@ geometry_msgs::TwistStamped vel_skew;
 cv_bridge::CvImageConstPtr cv_ptr;
 vpHomogeneousMatrix wMc, wMu;
 geometry_msgs::Pose ugv_pose, uav_pose;
+double durationT;
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {   
@@ -50,7 +52,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::Cam
     cv_ptr = cv_bridge::toCvShare(msg,sensor_msgs::image_encodings::BGR8); 
     // cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
     //dst = cv_bridge::toVispImage(*msg);
-    cam = visp_bridge::toVispCameraParameters(*cam_info);
+    cam = visp_bridge::toVispCameraParameters(*cam_info);   
 }
 
 void camera_pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg_camera_pose){
@@ -79,6 +81,7 @@ int main(int argc, char** argv)
     double target_pixel_size, target_real_size;
 
     ros::param::get("~target_pixel_size", target_pixel_size);
+    cout<<"target_pixel_size:"<<target_pixel_size<<endl;
     ros::param::get("~target_real_size", target_real_size);
 
     sensor_msgs::Image img_out;
@@ -89,13 +92,13 @@ int main(int argc, char** argv)
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::TwistStamped>("tag_velocity_skew",10);
     ros::Publisher track_state_pub = nh.advertise<std_msgs::Int8>("tag_tracker_status",10);
     // ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>("mavros/local_position/pose", 10, camera_pose_cb);
-    // ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
+    ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
     ros::Subscriber uav_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth", 10, uav_pos_cb);
     
     // Initialize tag detector with options
     apriltag_family_t *tf = NULL;
-    // tf = tag36h11_create();
-    tf = tag9h4_create();
+    tf = tag36h11_create();
+    // tf = tag9h4_create();
     tf->black_border = 1;
     cout << "Creating apriltag_detector..." << endl;
     apriltag_detector_t *td = apriltag_detector_create();
@@ -108,20 +111,23 @@ int main(int argc, char** argv)
     td->refine_decode = 0;
     td->refine_pose = 0;
 
+    ros::spinOnce();
+    rate.sleep();
+    // ros::spinOnce();
     // IBVS Part Init
     std_msgs::Int8 track_state;
     track_state.data = 0;
 
     vpServo task ;
     task.setServo(vpServo::EYEINHAND_CAMERA);
-    task.setInteractionMatrixType(vpServo::MEAN);
+    task.setInteractionMatrixType(vpServo::CURRENT);
 
     double lambda0,lambdaoo,lambda0_d;
     ros::param::get("~lambda0", lambda0);
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(0.5);
+    task.setLambda(0.75);
 
     double controller_P,controller_I,controller_D;
     ros::param::get("~controller_P", controller_P);
@@ -136,6 +142,8 @@ int main(int argc, char** argv)
 
     //double target_pixel_size
     //double target_real_size = 0.80;
+    /********************** First feature (x,y) ***********************/
+    #pragma region firstfeature
     double u_1 = (640 + target_pixel_size) / 2.0;
     double v_1 = (480 + target_pixel_size) / 2.0;
     double u_2 = (640 - target_pixel_size) / 2.0;
@@ -143,7 +151,7 @@ int main(int argc, char** argv)
 
     double u0 = cam.get_u0();
     double v0 = cam.get_v0();
-    double Zd = target_real_size / target_pixel_size * cam.get_px();
+    double Zd = target_real_size / target_pixel_size * cam.get_px() + 1.2;
     cout<<"Zd="<<Zd<<" U0="<<u0<<" V0="<<v0<<endl;   
     
     pd[0].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
@@ -157,6 +165,18 @@ int main(int argc, char** argv)
     pp[2].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     pp[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
     // pp[4].buildFrom(0, 0, Zd);
+    #pragma endregion firstfeature
+
+    /********************** Second feature log (Z/Zd) ***********************/
+    #pragma region secondfeature
+    vpGenericFeature logZd(1);
+    logZd.set_s(log(Zd));
+    double x = 0; //The x coordinate of the current point.
+    double y = 0; //The y coordinate of the current point.
+    double Z = 5; //The depth of the current point.
+    vpGenericFeature logZ(1); //The dimension of the feature is 1.
+    logZ.set_s( log(Z) );
+    #pragma endregion secondfeature
     
     #ifdef VISP_HAVE_DISPLAY
         vpPlot plotter(2, 250*2, 500, 100, 200, "Real time curves plotter");
@@ -192,12 +212,12 @@ int main(int argc, char** argv)
     // point[2].set_u(220);point[0].set_v(140);
     // point[3].set_u(220);point[0].set_v(340);
     for (unsigned int i = 0 ; i < 4 ; i++) {
-
-        // vpFeatureBuilder::create(pd[i], cam, point[i]);
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
         task.addFeature(pp[i], pd[i]);
         cout<<"pd["<<i<<"]=:"<<pd[i].get_x()<<","<<pd[i].get_y()<<","<<pd[i].get_Z()<<endl;
     }
+    task.addFeature(logZ, logZd);
+    task.print();
 
     //ibvs ends
 
@@ -222,7 +242,7 @@ int main(int argc, char** argv)
             };
 
             zarray_t *detections = apriltag_detector_detect(td, &im);
-            cout << zarray_size(detections) << " tags detected" << endl;
+            // cout << zarray_size(detections) << " tags detected" << endl;
 
             // Draw detection outlines
             for (int i = 0; i < zarray_size(detections); i++) {
@@ -242,7 +262,7 @@ int main(int argc, char** argv)
                 line(cv_ptr->image, Point(det->p[2][0], det->p[2][1]),
                         Point(det->p[3][0], det->p[3][1]),
                         Scalar(0xff, 0, 0), 2);
-                //cout<<"p0:"<<det->p[0][0]<<", "<<det->p[0][1]<<" p1:"<<det->p[1][0]<<", "<<det->p[1][1]<<" p2:"<<det->p[2][0]<<", "<<det->p[2][1]<<" p3:"<<det->p[3][0]<<", "<<det->p[3][1]<<endl;
+                // cout<<"p0:"<<det->p[0][0]<<", "<<det->p[0][1]<<" p1:"<<det->p[1][0]<<", "<<det->p[1][1]<<" p2:"<<det->p[2][0]<<", "<<det->p[2][1]<<" p3:"<<det->p[3][0]<<", "<<det->p[3][1]<<endl;
                 
                 stringstream ss;
                 ss << det->id;
@@ -259,9 +279,10 @@ int main(int argc, char** argv)
                 // update the feature points
                 double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
                             + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
-                double Z = target_real_size / temp * cam.get_px(); //需要更稳定的估计方法
+                double Z = target_real_size / temp * cam.get_px()+1.2; //需要更稳定的估计方法
                 // double Z1 = double(uav_pose.position.z) - 0.17;
                 // cout<< "Z1:" << Z1 << " Z:" << Z << endl;
+                // cout<< " Z:" << Z << endl;
                 for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
                     //point[i].track(cMo);
                     stringstream ss;
@@ -276,6 +297,15 @@ int main(int argc, char** argv)
                     //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
                 }
                 // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
+
+                logZ.set_s(log(Z));
+                vpMatrix LlogZ(1, 6);
+                LlogZ[0][0] = LlogZ[0][1] = LlogZ[0][5] = 0;
+                LlogZ[0][2] = -1 / Z;
+                LlogZ[0][3] = -pp[0].get_y();
+                LlogZ[0][4] = pp[0].get_x();
+                logZ.setInteractionMatrix(LlogZ);
+
                 delete det;                     
             }
             
@@ -297,31 +327,42 @@ int main(int argc, char** argv)
                 /**************  Using IBVS without PID ***********/
                 vpColVector v = task.computeControlLaw();
                 double e = ( task.getError() ).sumSquare();
-                // cout<<"e=:"<<e<<endl;
-
+                cout<<"e=:"<<e<<endl;
+                
                 vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
                 vpVelocityTwistMatrix fVc;
                 //fVc.buildFrom((wMc*cMo).inverse() * wMu);
                 fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
                 vpColVector f_v(6);
-                //cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
+                // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
                 //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
                 f_v = fVc * v;
+                // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
                 
                 vel_skew.twist.linear.x = f_v[0];
                 vel_skew.twist.linear.y = f_v[1];
                 vel_skew.twist.linear.z = f_v[2];
-                //vel_skew.twist.angular.x = rzyx[2];
-                //vel_skew.twist.angular.y = rzyx[1];
-                //vel_skew.twist.angular.z = rzyx[0];
                 //vel_skew.twist.angular.x = f_v[3];
                 //vel_skew.twist.angular.y = f_v[4];
                 vel_skew.twist.angular.z = f_v[5];
 
-                #ifdef VISP_HAVE_DISPLAY
-                    plotter.plot(0, iter, task.getError());
-                    plotter.plot(1, iter, v);
-                #endif
+                plotter.plot(0, iter, task.getError());
+                plotter.plot(1, iter, v);
+
+                //judge land situation
+                if(e < 0.001){
+                    durationT += 0.1;
+                    if(durationT > 3.0){
+                        track_state.data = 2;
+                        track_state_pub.publish(track_state);
+                        // return 0;
+                    }
+                }
+                else{
+                    durationT = 0;
+                }
+                cout << "durationT:" << durationT << endl;
+     
             }
             else{
                 track_state.data = 0;
@@ -347,7 +388,7 @@ int main(int argc, char** argv)
         vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
-        // cout<<"track_state:"<<track_state<<endl;
+        cout<<"track_state:"<<track_state<<endl;
         track_state_pub.publish(track_state);
         // waitKey(30);
         ros::spinOnce();
@@ -360,8 +401,8 @@ int main(int argc, char** argv)
     plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
     task.kill();
     apriltag_detector_destroy(td);
-    // tag36h11_destroy(tf);
-    tag9h4_destroy(tf);
+    tag36h11_destroy(tf);
+    // tag9h4_destroy(tf);
 
     return 0;
 }

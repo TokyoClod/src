@@ -5,8 +5,8 @@
 
     <node pkg="offb_ibvs" type="offb_ibvs_node" name="offb_ibvs_node" output="screen">
         
-        <param name="yaw_init" value="60" />
-        <param name="z_init" value="3" />
+        <param name="yaw_init" value="30" />
+        <param name="z_init" value="4" />
         <!--
         <rosparam>
             yaw_init: 30

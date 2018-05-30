@@ -14,6 +14,7 @@
 #include "geometry_msgs/TwistStamped.h"
 #include "geometry_msgs/Vector3Stamped.h"
 #include "geometry_msgs/PoseArray.h"
+#include "nav_msgs/Odometry.h"
 
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/SetCameraInfo.h>
@@ -22,13 +23,16 @@
 #include <camera_calibration_parsers/parse.h>
 #include "PID_position.h"
 #include <tf/transform_broadcaster.h>
+using namespace std;
 
 
 mavros_msgs::State fcu_state;
 std_msgs::Int8 track_state;
 geometry_msgs::PoseArray object_pose;
-geometry_msgs::TwistStamped vel_skew,camera_vel;
-geometry_msgs::PoseStamped camera_pose;
+geometry_msgs::TwistStamped vel_skew, camera_vel;
+// geometry_msgs::PoseStamped camera_pose;
+geometry_msgs::Pose uav_pose;
+geometry_msgs::PoseStamped pose, lostPose;
 
 std_msgs::Int8 theta,Rad;
 
@@ -44,12 +48,18 @@ void vel_skew_cb(const geometry_msgs::TwistStamped::ConstPtr& msg_vel_kew){
     vel_skew = *msg_vel_kew;
 }
 
-void camera_pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg_camera_pose){
-    camera_pose = *msg_camera_pose;
-}
+// void camera_pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg_camera_pose){
+//     camera_pose = *msg_camera_pose;
+// }
 
 void camera_vel_cb(const geometry_msgs::TwistStamped::ConstPtr& msg_camera_vel){
     camera_vel = *msg_camera_vel;
+}
+
+void uav_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_uav_odom){
+    nav_msgs::Odometry uav_odom = *msg_uav_odom;
+    uav_pose = uav_odom.pose.pose;
+    // wMc = visp_bridge::toVispHomogeneousMatrix(uav_pose);
 }
 
 int main(int argc, char **argv)
@@ -76,8 +86,9 @@ int main(int argc, char **argv)
     ros::Subscriber vel_pub = nh.subscribe<geometry_msgs::TwistStamped>("tag_velocity_skew", 10, vel_skew_cb);
 
     //subscribe the pose and vel of the px4
-    ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>
-            ("mavros/local_position/pose", 10,camera_pose_cb);
+    // ros::Subscriber camera_pos_sub = nh.subscribe<geometry_msgs::PoseStamped>
+    //         ("mavros/local_position/pose", 10,camera_pose_cb);
+    ros::Subscriber uav_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth", 10, uav_pos_cb);
     ros::Subscriber vel_sub = nh.subscribe<geometry_msgs::TwistStamped>
             ("/mavros/local_position/velocity", 10, camera_vel_cb); 
 
@@ -101,19 +112,25 @@ int main(int argc, char **argv)
 
     ros::param::get("~yaw_init", yaw_init);
     ros::param::get("~z_init", z_init);
-    geometry_msgs::PoseStamped pose;
+    
     //double yaw = 30;
     pose.pose.position.x = 0;
     pose.pose.position.y = 0;
     pose.pose.position.z = z_init;
     pose.pose.orientation = tf::createQuaternionMsgFromYaw(yaw_init*3.1416/180);
 
+    // lostPose.pose.position.x = 0;
+    // lostPose.pose.position.y = 0;
+    // lostPose.pose.position.z = z_init;
+    lostPose.pose=pose.pose;
+
     ROS_INFO("Program Start");
     mavros_msgs::SetMode offb_set_mode;
     offb_set_mode.request.custom_mode = "OFFBOARD";
 
-    mavros_msgs::CommandBool arm_cmd;
+    mavros_msgs::CommandBool arm_cmd, disarm_cmd;
     arm_cmd.request.value = true;
+    disarm_cmd.request.value = true;
 
     ros::Time last_request = ros::Time::now();
 
@@ -140,41 +157,42 @@ int main(int argc, char **argv)
             }
             
             if(fcu_state.armed){
-                if (track_state.data) {
+                cout<<"track_state:"<<track_state<<endl;
+
+                if (track_state.data == 0) {
+                    //ROS_INFO("track lost"); 
+                    // cout <<"z"<<lostPose.pose.position.z<<endl;
+                    local_pos_pub.publish(lostPose);
+                    ros::spinOnce();   
+                    if(uav_pose.position.z < z_init-0.1) 
+                        track_state.data = 0;    
+                    
+                }                       
+                else if(track_state.data == 1) {
                     //ROS_INFO("tracking");
-                    //vel_to_pub = camera_pose*vel_skew;
-                    /*
-                    vel_to_pub.twist.linear.x = pid_1.pid_control(vel_skew.twist.linear.x, camera_vel.twist.linear.x);
-                    vel_to_pub.twist.linear.y = pid_2.pid_control(vel_skew.twist.linear.y, camera_vel.twist.linear.y);
-                    vel_to_pub.twist.linear.z = pid_3.pid_control(vel_skew.twist.linear.z, camera_vel.twist.linear.z);
-                    vel_to_pub.twist.angular.z = pid_4.pid_control(vel_skew.twist.angular.z, camera_vel.twist.angular.z);
-                    local_vel_pub.publish(vel_to_pub);
-                    */
                     local_vel_pub.publish(vel_skew);
                     
-                    }                       
-                else {
-                    //ROS_INFO("track lost"); 
-                    local_pos_pub.publish(pose);
-                    /*
-                    if (camera_pose.pose.position.z < 2.5){
-                        vel_to_pub.twist.linear.x = 0;
-                        vel_to_pub.twist.linear.y = 0;
-                        vel_to_pub.twist.linear.z = 0.5;
-                        vel_to_pub.twist.angular.x = 0;
-                        vel_to_pub.twist.angular.y = 0;
-                        vel_to_pub.twist.angular.z = 0;
-                    }else{
-                        vel_to_pub.twist.linear.x = 0;
-                        vel_to_pub.twist.linear.y = 0;
-                        vel_to_pub.twist.linear.z = 0;
-                        vel_to_pub.twist.angular.x = 0;
-                        vel_to_pub.twist.angular.y = 0;
-                        vel_to_pub.twist.angular.z = 0;
-                    }*/                                          
+                    lostPose.pose.position.x = uav_pose.position.x;
+                    lostPose.pose.position.y = uav_pose.position.y;
+                    lostPose.pose.position.z = z_init;
+                    lostPose.pose.orientation.z = uav_pose.orientation.z;  
+                    ros::spinOnce();                                             
                 }
-            } 
-            
+                else if(track_state.data == 2){
+                    if( arming_client.call(disarm_cmd) && disarm_cmd.response.success){
+                        ROS_INFO("Vehicle disarmed");     
+                    }
+                    last_request = ros::Time::now();  
+                    // lostPose.pose.position.z = 0;
+                    // local_pos_pub.publish(lostPose);
+                    ros::spinOnce();
+                }
+                else{}
+            }
+            else{
+                ros::spinOnce();
+            }
+   
         }
         //local_vel_pub.publish(vel_to_pub);
         //local_pos_pub.publish(pose);
@@ -197,9 +215,10 @@ int main(int argc, char **argv)
         ros::Time end = ros::Time::now();
         // ROS_INFO("%f ms",1000*(end-begin).toSec());
 
-        ros::spinOnce();
+        // ros::spinOnce();
         rate.sleep();
     }
+    
 
     return 0;
 }
