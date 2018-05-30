@@ -355,7 +355,7 @@ int main(int argc, char** argv)
                     if(durationT > 3.0){
                         track_state.data = 2;
                         track_state_pub.publish(track_state);
-                        // return 0;
+                        return 0;
                     }
                 }
                 else{
