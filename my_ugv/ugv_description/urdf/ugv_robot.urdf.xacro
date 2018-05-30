@@ -19,7 +19,7 @@
     
     <!--    <xacro:property name="wheel_offset_y" value="${(total_width - wheel_size_y) / 2}" />-->
     <!-- <xacro:property name="wheel_offset_y" value="0.48" /> -->
-    <xacro:property name="wheel_offset_x" value="0.15" />
+    <xacro:property name="wheel_offset_x" value="0.2" />
     <xacro:property name="wheel_offset_y" value="0.48" />
     <xacro:property name="wheel_offset_z_from_base_link" value="-0.72" />
       
@@ -52,9 +52,6 @@
                 <!-- <mesh filename="package://ugv_description/meshes/jasmine_ugv/jasmine_ugv.dae" scale="3 3 3"/> -->
                 <mesh filename="package://ugv_description/meshes/lr90.dae" scale="1 1 1"/>
             </geometry>
-            <material name="Grey" >
-                <color rgba="0.8 0.8 0.8 1"/>
-            </material>
             
         </visual>
         
@@ -76,12 +73,13 @@
         </inertial>
         
         <visual>
+            <!-- <origin xyz="-0.00 0.00 0.5" rpy="0 0 0" /> -->
             <origin xyz="-0.50 0.00 0.5" rpy="0 0 0" />
             <geometry>
                 <!--<box size="${base_size_x} ${base_size_y} ${base_size_z}" />-->
-                <!-- <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/> -->
+                <mesh filename="package://ugv_description/meshes/apriltag/apriltag.dae" scale="1 1 1"/>
                 <!-- <mesh filename="package://ugv_description/meshes/emb_apriltag/emb_apriltag.dae" scale="1 1 1"/> -->
-                <mesh filename="package://ugv_description/meshes/embed_apriltag/embed_apriltag.dae" scale="1 1 1"/>
+                <!-- <mesh filename="package://ugv_description/meshes/embed_apriltag/embed_apriltag.dae" scale="1 1 1"/> -->
             </geometry>
             
             
@@ -128,9 +126,15 @@
     <!-- <xacro:ugv_wheel parent="ugv_base_link" prefix="rear_wheel" offset_x= "-0.7" offset_y = "0" offset_z = "${wheel_offset_z_from_base_link}" 
             reflect="1" wheel_radius="${wheel_radius}" wheel_size_y="${wheel_length}"/> -->
     
-    <gazebo reference="ugv_base_link">
+    <!-- <gazebo reference="ugv_base_link">
         <material>HLUGV/Green</material>
-    </gazebo>
+        <material>  
+            <ambient>0.19225 0.19225 0.19225 1.0</ambient>  
+            <diffuse>0.50754 0.50754 0.50754 1.0</diffuse>  
+            <specular>0.508273 0.508273 0.508273 1.0</specular>  
+            <emissive>0.0 0.0 0.0 0.0</emissive>  
+        </material>
+    </gazebo> -->
 
     <gazebo>
         <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
