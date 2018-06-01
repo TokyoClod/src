@@ -1,3 +1,9 @@
 ibvs/log/vc.dat
 ibvs/log/error.dat
 .vscode/settings.json
+ibvs/log/T1vc.dat
+ibvs/log/T1error.dat
+ibvs/log/T0error.dat
+ibvs/log/T0vc.dat
+ibvs/log/uav_pose.csv
+ibvs/log/ugv_pose.csv
