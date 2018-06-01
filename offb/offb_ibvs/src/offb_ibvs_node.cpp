@@ -164,8 +164,8 @@ int main(int argc, char **argv)
                     // cout <<"z"<<lostPose.pose.position.z<<endl;
                     local_pos_pub.publish(lostPose);
                     ros::spinOnce();   
-                    if(uav_pose.position.z < z_init-0.1) 
-                        track_state.data = 0;    
+                    // if(uav_pose.position.z < z_init-0.1) 
+                    //     track_state.data = 0;    
                     
                 }                       
                 else if(track_state.data == 1) {

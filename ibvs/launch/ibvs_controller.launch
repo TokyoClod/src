@@ -1,8 +1,10 @@
 <?xml version="1.0"?>
 <launch>
     <node pkg="ibvs" type="ibvs_node" name="ibvs_node" output="screen">
-        <param name="target_pixel_size" value="200" />
-        <param name="target_real_size" value="0.80" />
+        <param name="target_pixel_size_a" value="250" />
+        <param name="target_pixel_size_b" value="150" />
+        <param name="target_real_size_a" value="0.70" />
+        <param name="target_real_size_b" value="0.15556" />
         <param name="lambda0" value="2" />
         <param name="lambdaoo" value="0.4" />
         <param name="lambda0_d" value="20" />

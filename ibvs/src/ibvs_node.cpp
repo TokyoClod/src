@@ -6,6 +6,7 @@
 #include "std_msgs/Int8.h"
 #include "nav_msgs/Odometry.h"
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/opencv.hpp>
 
 #include <image_transport/image_transport.h> 
 
@@ -26,10 +27,11 @@
 #include <visp3/gui/vpPlot.h>
 
 #include <iostream>
-#include <opencv2/opencv.hpp>
+
 #include "apriltag/apriltag.h"
 #include "apriltag/tag36h11.h"
 #include "apriltag/tag9h4.h"
+#include "apriltag/tag25h10.h"
 #include "apriltag/tag36artoolkit.h"
 #include <apriltag/common/getopt.h>
 #include <tf/transform_listener.h>
@@ -40,7 +42,7 @@ using namespace cv;
 
 vpCameraParameters cam;
 vpImage<unsigned char> dst; 
-geometry_msgs::TwistStamped vel_skew;
+geometry_msgs::TwistStamped vel_skew, vel_skew_a, vel_skew_b;
 cv_bridge::CvImageConstPtr cv_ptr;
 vpHomogeneousMatrix wMc, wMu;
 geometry_msgs::Pose ugv_pose, uav_pose;
@@ -71,6 +73,14 @@ void uav_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_uav_odom){
     uav_pose = uav_odom.pose.pose;
     wMc = visp_bridge::toVispHomogeneousMatrix(uav_pose);
 }
+double get_area(double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3 ){
+    double s;
+    s = 0.5*(x0*y1 - x1*y0+\
+             x1*y2 - x2*y1+\
+             x2*y3 - x3*y2+\
+             x3*y0 - x0*y3);
+    return s > 0 ? s : -s;
+}
 
 int main(int argc, char** argv)
 {
@@ -78,11 +88,20 @@ int main(int argc, char** argv)
     ros::NodeHandle nh;
     ros::Rate rate(10.0);
 
-    double target_pixel_size, target_real_size;
+    ofstream oFile_uav, oFile_ugv; 
+    oFile_uav.open("/home/abner/catkin_ws/src/ibvs/log/uav_pose.csv", ios::out | ios::trunc);  
+    oFile_ugv.open("/home/abner/catkin_ws/src/ibvs/log/ugv_pose.csv", ios::out | ios::trunc);  
+    oFile_uav << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;   
+    oFile_ugv << "iter" << "," << "x" << "," << "y" << "," << "z" << endl; 
+    // oFile_uav << "姓名" << "," << "年龄" << "," << "班级" << "," << "班主任" << endl;    
 
-    ros::param::get("~target_pixel_size", target_pixel_size);
-    cout<<"target_pixel_size:"<<target_pixel_size<<endl;
-    ros::param::get("~target_real_size", target_real_size);
+    double target_pixel_size_a, target_pixel_size_b, target_real_size_a, target_real_size_b;
+
+    ros::param::get("~target_pixel_size_a", target_pixel_size_a);
+    ros::param::get("~target_pixel_size_b", target_pixel_size_b);
+    cout<<"target_pixel_size_a:"<<target_pixel_size_a<<" target_pixel_size_b:"<<target_pixel_size_b<<endl;
+    ros::param::get("~target_real_size_a", target_real_size_a);
+    ros::param::get("~target_real_size_b", target_real_size_b);
 
     sensor_msgs::Image img_out;
     image_transport::ImageTransport it(nh);
@@ -97,7 +116,7 @@ int main(int argc, char** argv)
     
     // Initialize tag detector with options
     apriltag_family_t *tf = NULL;
-    tf = tag36h11_create();
+    tf = tag25h10_create();
     // tf = tag9h4_create();
     tf->black_border = 1;
     cout << "Creating apriltag_detector..." << endl;
@@ -118,16 +137,19 @@ int main(int argc, char** argv)
     std_msgs::Int8 track_state;
     track_state.data = 0;
 
-    vpServo task ;
-    task.setServo(vpServo::EYEINHAND_CAMERA);
-    task.setInteractionMatrixType(vpServo::CURRENT);
+    vpServo task_a, task_b ;
+    task_a.setServo(vpServo::EYEINHAND_CAMERA);
+    task_a.setInteractionMatrixType(vpServo::CURRENT);
+    task_b.setServo(vpServo::EYEINHAND_CAMERA);
+    task_b.setInteractionMatrixType(vpServo::CURRENT);
 
     double lambda0,lambdaoo,lambda0_d;
     ros::param::get("~lambda0", lambda0);
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
     vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task.setLambda(0.75);
+    task_a.setLambda(0.4);
+    task_b.setLambda(0.2);
 
     double controller_P,controller_I,controller_D;
     ros::param::get("~controller_P", controller_P);
@@ -137,54 +159,76 @@ int main(int argc, char** argv)
 
     //double Zd = 1.074;  
     ros::spinOnce();
-    vpFeaturePoint pp[4], pd[4] ;
+    vpFeaturePoint ppa[4], ppb[4], pda[4] ,pdb[4];
     cout<<"px:"<<cam.get_px()<<", py:"<<cam.get_py()<<endl;
 
     //double target_pixel_size
     //double target_real_size = 0.80;
     /********************** First feature (x,y) ***********************/
     #pragma region firstfeature
-    double u_1 = (640 + target_pixel_size) / 2.0;
-    double v_1 = (480 + target_pixel_size) / 2.0;
-    double u_2 = (640 - target_pixel_size) / 2.0;
-    double v_2 = (480 - target_pixel_size) / 2.0;
+    double u_1a = (640 + target_pixel_size_a) / 2.0;
+    double v_1a = (480 + target_pixel_size_a) / 2.0;
+    double u_2a = (640 - target_pixel_size_a) / 2.0;
+    double v_2a = (480 - target_pixel_size_a) / 2.0;
+
+    double u_1b = (640 + target_pixel_size_b) / 2.0;
+    double v_1b = (480 + target_pixel_size_b) / 2.0;
+    double u_2b = (640 - target_pixel_size_b) / 2.0;
+    double v_2b = (480 - target_pixel_size_b) / 2.0;
 
     double u0 = cam.get_u0();
     double v0 = cam.get_v0();
-    double Zd = target_real_size / target_pixel_size * cam.get_px() + 1.2;
-    cout<<"Zd="<<Zd<<" U0="<<u0<<" V0="<<v0<<endl;   
+    double Zd_a = target_real_size_a / target_pixel_size_a * cam.get_px() + 1.2;
+    double Zd_b = target_real_size_b / target_pixel_size_b * cam.get_px() + 1.2;
+    cout<<"Zd_a="<<Zd_a<<" Zd_b="<<Zd_b<<" U0="<<u0<<" V0="<<v0<<endl;   
     
-    pd[0].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
-    pd[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
-    pd[2].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
-    pd[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
+    pda[0].buildFrom((u_1a-u0) / cam.get_px(), (v_1a-v0) / cam.get_py(), Zd_a);
+    pda[1].buildFrom((u_1a-u0) / cam.get_px(), (v_2a-v0) / cam.get_py(), Zd_a);
+    pda[2].buildFrom((u_2a-u0) / cam.get_px(), (v_2a-v0) / cam.get_py(), Zd_a);
+    pda[3].buildFrom((u_2a-u0) / cam.get_px(), (v_1a-v0) / cam.get_py(), Zd_a);
     // pd[4].buildFrom(0, 0, Zd);
+    pdb[0].buildFrom((u_1b-u0) / cam.get_px(), (v_1b-v0) / cam.get_py(), Zd_b);
+    pdb[1].buildFrom((u_1b-u0) / cam.get_px(), (v_2b-v0) / cam.get_py(), Zd_b);
+    pdb[2].buildFrom((u_2b-u0) / cam.get_px(), (v_2b-v0) / cam.get_py(), Zd_b);
+    pdb[3].buildFrom((u_2b-u0) / cam.get_px(), (v_1b-v0) / cam.get_py(), Zd_b);
 
-    pp[0].buildFrom((u_2-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
-    pp[1].buildFrom((u_1-u0) / cam.get_px(), (v_2-v0) / cam.get_py(), Zd);
-    pp[2].buildFrom((u_1-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
-    pp[3].buildFrom((u_2-u0) / cam.get_px(), (v_1-v0) / cam.get_py(), Zd);
+    ppa[0].buildFrom((u_2a-u0) / cam.get_px(), (v_2a-v0) / cam.get_py(), Zd_a);
+    ppa[1].buildFrom((u_1a-u0) / cam.get_px(), (v_2a-v0) / cam.get_py(), Zd_a);
+    ppa[2].buildFrom((u_1a-u0) / cam.get_px(), (v_1a-v0) / cam.get_py(), Zd_a);
+    ppa[3].buildFrom((u_2a-u0) / cam.get_px(), (v_1a-v0) / cam.get_py(), Zd_a);
     // pp[4].buildFrom(0, 0, Zd);
+    ppb[0].buildFrom((u_2b-u0) / cam.get_px(), (v_2b-v0) / cam.get_py(), Zd_b);
+    ppb[1].buildFrom((u_1b-u0) / cam.get_px(), (v_2b-v0) / cam.get_py(), Zd_b);
+    ppb[2].buildFrom((u_1b-u0) / cam.get_px(), (v_1b-v0) / cam.get_py(), Zd_b);
+    ppb[3].buildFrom((u_2b-u0) / cam.get_px(), (v_1b-v0) / cam.get_py(), Zd_b);
     #pragma endregion firstfeature
 
     /********************** Second feature log (Z/Zd) ***********************/
     #pragma region secondfeature
-    vpGenericFeature logZd(1);
-    logZd.set_s(log(Zd));
+    vpGenericFeature logZd_a(1); 
+    vpGenericFeature logZd_b(1);
+    logZd_a.set_s(log(Zd_a));
+    logZd_b.set_s(log(Zd_b));
     double x = 0; //The x coordinate of the current point.
     double y = 0; //The y coordinate of the current point.
     double Z = 5; //The depth of the current point.
-    vpGenericFeature logZ(1); //The dimension of the feature is 1.
-    logZ.set_s( log(Z) );
+    vpGenericFeature logZ_a(1); //The dimension of the feature is 1.
+    vpGenericFeature logZ_b(1); //The dimension of the feature is 1.
+    logZ_a.set_s( log(Z) );
+    logZ_b.set_s( log(Z) );
     #pragma endregion secondfeature
     
     #ifdef VISP_HAVE_DISPLAY
-        vpPlot plotter(2, 250*2, 500, 100, 200, "Real time curves plotter");
-        plotter.setTitle(0, "Visual features error");
-        plotter.setTitle(1, "Camera velocities");
+        vpPlot plotter(4, 250*2, 500*2, 100, 200, "Real time curves plotter");
+        plotter.setTitle(0, "T0 Visual features error");
+        plotter.setTitle(1, "T0 Camera velocities");
+        plotter.setTitle(2, "T1 Visual features error");
+        plotter.setTitle(3, "T1 Camera velocities");
 
-        plotter.initGraph(0, 8);
+        plotter.initGraph(0, 9);
         plotter.initGraph(1, 6);
+        plotter.initGraph(2, 9);
+        plotter.initGraph(3, 6);
 
         plotter.setLegend(0, 0, "x1");
         plotter.setLegend(0, 1, "y1");
@@ -194,8 +238,7 @@ int main(int argc, char** argv)
         plotter.setLegend(0, 5, "y3");
         plotter.setLegend(0, 6, "x4");
         plotter.setLegend(0, 7, "y4");
-        // plotter.setLegend(0, 8, "x5");
-        // plotter.setLegend(0, 9, "y5");
+        plotter.setLegend(0, 8, "z");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -203,6 +246,23 @@ int main(int argc, char** argv)
         plotter.setLegend(1, 3, "w_x");
         plotter.setLegend(1, 4, "w_y");
         plotter.setLegend(1, 5, "w_z");
+
+        plotter.setLegend(2, 0, "x1");
+        plotter.setLegend(2, 1, "y1");
+        plotter.setLegend(2, 2, "x2");
+        plotter.setLegend(2, 3, "y2");
+        plotter.setLegend(2, 4, "x3");
+        plotter.setLegend(2, 5, "y3");
+        plotter.setLegend(2, 6, "x4");
+        plotter.setLegend(2, 7, "y4");
+        plotter.setLegend(2, 8, "z");
+
+        plotter.setLegend(3, 0, "v_x");
+        plotter.setLegend(3, 1, "v_y");
+        plotter.setLegend(3, 2, "v_z");
+        plotter.setLegend(3, 3, "w_x");
+        plotter.setLegend(3, 4, "w_y");
+        plotter.setLegend(3, 5, "w_z");
     #endif
 
     
@@ -213,11 +273,17 @@ int main(int argc, char** argv)
     // point[3].set_u(220);point[0].set_v(340);
     for (unsigned int i = 0 ; i < 4 ; i++) {
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
-        task.addFeature(pp[i], pd[i]);
-        cout<<"pd["<<i<<"]=:"<<pd[i].get_x()<<","<<pd[i].get_y()<<","<<pd[i].get_Z()<<endl;
+        task_a.addFeature(ppa[i], pda[i]);
+        task_b.addFeature(ppb[i], pdb[i]);
+        cout<<"pda["<<i<<"]=:"<<pda[i].get_x()<<","<<pda[i].get_y()<<","<<pda[i].get_Z()<<endl;
+        cout<<"pdb["<<i<<"]=:"<<pdb[i].get_x()<<","<<pdb[i].get_y()<<","<<pdb[i].get_Z()<<endl;
     }
-    task.addFeature(logZ, logZd);
-    task.print();
+    cout<<endl;
+    task_a.addFeature(logZ_a, logZd_a);
+    task_a.print();
+    cout<<endl;
+    task_b.addFeature(logZ_b, logZd_b);
+    task_b.print();
 
     //ibvs ends
 
@@ -225,8 +291,11 @@ int main(int argc, char** argv)
 
     Mat frame, gray;
     unsigned int iter = 0;
+    int flag_task_a, flag_task_b;
+    double e0, e1, s0, s1;
     while(ros::ok())
     {
+        flag_task_a = flag_task_b = 0;
         ros::spinOnce();
         ros::Time begin =ros::Time::now();
         if(cv_ptr)
@@ -252,7 +321,6 @@ int main(int argc, char** argv)
                 line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
                         Point(det->p[1][0], det->p[1][1]),
                         Scalar(0, 0xff, 0), 2);
-                //cout<<"p0-x"<<det->p[0][0]<<"p0-y"<<det->p[0][1]<<endl;
                 line(cv_ptr->image, Point(det->p[0][0], det->p[0][1]),
                         Point(det->p[3][0], det->p[3][1]),
                         Scalar(0, 0, 0xff), 2);
@@ -279,10 +347,11 @@ int main(int argc, char** argv)
                 // update the feature points
                 double temp = (abs(det->p[0][1] - det->p[1][1]) + abs(det->p[3][1] - det->p[2][1]) \
                             + abs(det->p[3][0] - det->p[0][0]) + abs(det->p[2][0] - det->p[1][0])) / 4;
-                double Z = target_real_size / temp * cam.get_px()+1.2; //需要更稳定的估计方法
+                // double Za = target_real_size_a / temp * cam.get_px()+1.2; //需要更稳定的估计方法
                 // double Z1 = double(uav_pose.position.z) - 0.17;
                 // cout<< "Z1:" << Z1 << " Z:" << Z << endl;
                 // cout<< " Z:" << Z << endl;
+
                 for (unsigned int i = 0 ; i < 4 ; i++) {   //通过将3维点投影到图像平面，来更新特征点
                     //point[i].track(cMo);
                     stringstream ss;
@@ -292,42 +361,75 @@ int main(int argc, char** argv)
                                         det->p[i][1]-5),
                         fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
                     double X = (det->p[i][0]-u0) / cam.get_px();
-                    double Y = (det->p[i][1]-v0) / cam.get_py();          
-                    pp[i].buildFrom(X, Y, Z);            
+                    double Y = (det->p[i][1]-v0) / cam.get_py();  
+                    if(det->id == 0){
+                        double Za = target_real_size_a / temp * cam.get_px()+1.2; //需要更稳定的估计方法
+                        ppa[i].buildFrom(X, Y, Za); 
+                        s0 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
+                        cout<<"s0:"<<s0<<endl;
+                        flag_task_a = 1;
+
+                        logZ_a.set_s(log(Za));
+                        vpMatrix LlogZa(1, 6);
+                        LlogZa[0][0] = LlogZa[0][1] = LlogZa[0][5] = 0;
+                        LlogZa[0][2] = -1 / Za;
+                        LlogZa[0][3] = -ppa[0].get_y();
+                        LlogZa[0][4] = ppa[0].get_x();
+                        logZ_a.setInteractionMatrix(LlogZa);
+                    }
+                    else if(det->id == 1){
+                        double Zb = target_real_size_b / temp * cam.get_px()+1.2; //需要更稳定的估计方法
+                        ppb[i].buildFrom(X, Y, Zb); 
+                        s1 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
+                        cout<<"s1:"<<s1<<endl;
+                        if(s1>2500) 
+                        {flag_task_b = 1;}
+
+                        logZ_b.set_s(log(Zb));
+                        vpMatrix LlogZb(1, 6);
+                        LlogZb[0][0] = LlogZb[0][1] = LlogZb[0][5] = 0;
+                        LlogZb[0][2] = -1 / Zb;
+                        LlogZb[0][3] = -ppb[0].get_y();
+                        LlogZb[0][4] = ppb[0].get_x();
+                        logZ_b.setInteractionMatrix(LlogZb);
+
+                    }
+                    else{
+                        ROS_ERROR("#1: No This ID!!");
+                    }        
+                    // pp[i].buildFrom(X, Y, Z);            
                     //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
                 }
-                // pp[4].buildFrom(double((det->c[0]-u0) / cam.get_px()), double((det->c[1]-v0) / cam.get_py()), Z);
-
-                logZ.set_s(log(Z));
-                vpMatrix LlogZ(1, 6);
-                LlogZ[0][0] = LlogZ[0][1] = LlogZ[0][5] = 0;
-                LlogZ[0][2] = -1 / Z;
-                LlogZ[0][3] = -pp[0].get_y();
-                LlogZ[0][4] = pp[0].get_x();
-                logZ.setInteractionMatrix(LlogZ);
+                
+                // logZ.set_s(log(Z));
+                // vpMatrix LlogZ(1, 6);
+                // LlogZ[0][0] = LlogZ[0][1] = LlogZ[0][5] = 0;
+                // LlogZ[0][2] = -1 / Z;
+                // LlogZ[0][3] = -pp[0].get_y();
+                // LlogZ[0][4] = pp[0].get_x();
+                // logZ.setInteractionMatrix(LlogZ);
 
                 delete det;                     
             }
-            
-            
-            // ibvs part
-            if (zarray_size(detections) > 0){ 
+            cout<<"flag_task_a:"<<flag_task_a<<" flag_task_b:"<<flag_task_b<<endl;
+            /**************  内部图标优先 ***********/
+            if (flag_task_b == 1){ 
                 track_state.data = 1;   
                 /**************  Using IBVS with PID ***********/
-                // vpColVector pre_error = task.computeError();
+                // vpColVector pre_error = task_a.computeError();
                 // unsigned int dimError = pre_error.getRows();
                 // vpColVector new_error(dimError);
                 // for (unsigned int k = 0; k <  dimError; k++) {
                 //     new_error[k] = pid.pid_control(pre_error[k]);
                 //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
                 // }
-                // task.setError(new_error);
-                // vpColVector v = task.computeControlLaw_pid();
+                // task_a.setError(new_error);
+                // vpColVector v = task_a.computeControlLaw_pid();
 
                 /**************  Using IBVS without PID ***********/
-                vpColVector v = task.computeControlLaw();
-                double e = ( task.getError() ).sumSquare();
-                cout<<"e=:"<<e<<endl;
+                vpColVector v = task_b.computeControlLaw();
+                e1 = ( task_b.getError() ).sumSquare();
+                // cout<<"e1=:"<<e1<<endl;
                 
                 vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
                 vpVelocityTwistMatrix fVc;
@@ -339,32 +441,89 @@ int main(int argc, char** argv)
                 f_v = fVc * v;
                 // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
                 
-                vel_skew.twist.linear.x = f_v[0];
-                vel_skew.twist.linear.y = f_v[1];
-                vel_skew.twist.linear.z = f_v[2];
+                vel_skew_b.twist.linear.x = f_v[0];
+                vel_skew_b.twist.linear.y = f_v[1];
+                vel_skew_b.twist.linear.z = f_v[2];
                 //vel_skew.twist.angular.x = f_v[3];
                 //vel_skew.twist.angular.y = f_v[4];
-                vel_skew.twist.angular.z = f_v[5];
+                vel_skew_b.twist.angular.z = f_v[5];
 
-                plotter.plot(0, iter, task.getError());
-                plotter.plot(1, iter, v);
+                // plotter.plot(0, iter, task_a.getError());
+                // plotter.plot(1, iter, v);
+                plotter.plot(2, iter, task_b.getError());
+                plotter.plot(3, iter, f_v);
 
                 //judge land situation
-                if(e < 0.001){
-                    durationT += 0.1;
-                    if(durationT > 3.0){
-                        track_state.data = 2;
-                        track_state_pub.publish(track_state);
-                        return 0;
-                    }
-                }
-                else{
-                    durationT = 0;
-                }
-                cout << "durationT:" << durationT << endl;
+                // if(e < 0.001){
+                //     durationT += 0.1;
+                //     if(durationT > 3.0){
+                //         track_state.data = 2;
+                //         track_state_pub.publish(track_state);
+                //         return 0;
+                //     }
+                // }
+                // else{
+                //     durationT = 0;
+                // }
+                // cout << "durationT:" << durationT << endl;
      
             }
-            else{
+            if (flag_task_a == 1){ 
+                track_state.data = 1;   
+                /**************  Using IBVS with PID ***********/
+                // vpColVector pre_error = task_a.computeError();
+                // unsigned int dimError = pre_error.getRows();
+                // vpColVector new_error(dimError);
+                // for (unsigned int k = 0; k <  dimError; k++) {
+                //     new_error[k] = pid.pid_control(pre_error[k]);
+                //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+                // }
+                // task_a.setError(new_error);
+                // vpColVector v = task_a.computeControlLaw_pid();
+
+                /**************  Using IBVS without PID ***********/
+                vpColVector v = task_a.computeControlLaw();
+                e0 = ( task_a.getError() ).sumSquare();
+                // cout<<"e0=:"<<e0<<endl;
+                
+                vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
+                vpVelocityTwistMatrix fVc;
+                //fVc.buildFrom((wMc*cMo).inverse() * wMu);
+                fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
+                vpColVector f_v(6);
+                // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
+                //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
+                f_v = fVc * v;
+                // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
+                
+                vel_skew_a.twist.linear.x = f_v[0];
+                vel_skew_a.twist.linear.y = f_v[1];
+                vel_skew_a.twist.linear.z = f_v[2];
+                //vel_skew.twist.angular.x = f_v[3];
+                //vel_skew.twist.angular.y = f_v[4];
+                vel_skew_a.twist.angular.z = f_v[5];
+
+                plotter.plot(0, iter, task_a.getError());
+                plotter.plot(1, iter, f_v);
+                // plotter.plot(2, i/ter, task_b.getError());
+                // plotter.plot(3, iter, f_v);
+
+                //judge land situation
+                // if(e < 0.001){
+                //     durationT += 0.1;
+                //     if(durationT > 3.0){
+                //         track_state.data = 2;
+                //         track_state_pub.publish(track_state);
+                //         return 0;
+                //     }
+                // }
+                // else{
+                //     durationT = 0;
+                // }
+                // cout << "durationT:" << durationT << endl;
+     
+            }
+            if ((flag_task_a || flag_task_b) == 0){
                 track_state.data = 0;
                 vel_skew.twist.linear.x = 0;
                 vel_skew.twist.linear.y = 0;
@@ -373,19 +532,109 @@ int main(int argc, char** argv)
                 vel_skew.twist.angular.y = 0;
                 vel_skew.twist.angular.z = 0;
             }
+
+
+            
+            // ibvs part
+            // if (zarray_size(detections) > 0){ 
+            //     track_state.data = 1;   
+            //     /**************  Using IBVS with PID ***********/
+            //     // vpColVector pre_error = task_a.computeError();
+            //     // unsigned int dimError = pre_error.getRows();
+            //     // vpColVector new_error(dimError);
+            //     // for (unsigned int k = 0; k <  dimError; k++) {
+            //     //     new_error[k] = pid.pid_control(pre_error[k]);
+            //     //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+            //     // }
+            //     // task_a.setError(new_error);
+            //     // vpColVector v = task_a.computeControlLaw_pid();
+
+            //     /**************  Using IBVS without PID ***********/
+            //     vpColVector v = task_a.computeControlLaw();
+            //     double e = ( task_a.getError() ).sumSquare();
+            //     cout<<"e=:"<<e<<endl;
+                
+            //     vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
+            //     vpVelocityTwistMatrix fVc;
+            //     //fVc.buildFrom((wMc*cMo).inverse() * wMu);
+            //     fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
+            //     vpColVector f_v(6);
+            //     // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
+            //     //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
+            //     f_v = fVc * v;
+            //     // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
+                
+            //     vel_skew.twist.linear.x = f_v[0];
+            //     vel_skew.twist.linear.y = f_v[1];
+            //     vel_skew.twist.linear.z = f_v[2];
+            //     //vel_skew.twist.angular.x = f_v[3];
+            //     //vel_skew.twist.angular.y = f_v[4];
+            //     vel_skew.twist.angular.z = f_v[5];
+
+            //     plotter.plot(0, iter, task_a.getError());
+            //     plotter.plot(1, iter, v);
+            //     plotter.plot(2, iter, task_b.getError());
+            //     plotter.plot(3, iter, v);
+
+            //     //judge land situation
+            //     if(e < 0.001){
+            //         durationT += 0.1;
+            //         if(durationT > 3.0){
+            //             track_state.data = 2;
+            //             track_state_pub.publish(track_state);
+            //             return 0;
+            //         }
+            //     }
+            //     else{
+            //         durationT = 0;
+            //     }
+            //     cout << "durationT:" << durationT << endl;
+     
+            // }
+            // else{
+            //     track_state.data = 0;
+            //     vel_skew.twist.linear.x = 0;
+            //     vel_skew.twist.linear.y = 0;
+            //     vel_skew.twist.linear.z = 0;
+            //     vel_skew.twist.angular.x = 0;
+            //     vel_skew.twist.angular.y = 0;
+            //     vel_skew.twist.angular.z = 0;
+            // }
             zarray_destroy(detections);
             outimg_pub.publish(cv_ptr->toImageMsg());
 
         }
         else{}
-        
 
+        
+        oFile_uav << iter << "," << uav_pose.position.x << "," << uav_pose.position.y << "," << uav_pose.position.z << endl;   
+        oFile_ugv << iter << "," << ugv_pose.position.x << "," << ugv_pose.position.y << "," << ugv_pose.position.z << endl;
+       
         //ibvs end
         iter++;
         
         // imshow("Tag Detections", cv_ptr->image);
+
+        if(flag_task_b==1){
+            cout<<"e1=:"<<e1<<" ";
+        }
+        if(flag_task_a==1){
+            cout<<"e0=:"<<e0<<" ";
+        }  
+        // cout<<endl;
+
+        if(flag_task_b==1){
+            vel_pub.publish(vel_skew_b);
+        }
+        else if(flag_task_a==1){
+            vel_pub.publish(vel_skew_a);
+        }
+        else{
+            // ROS_ERROR("#2:No This ID!!")
+            vel_pub.publish(vel_skew);
+        }   
         
-        vel_pub.publish(vel_skew);
+        // vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
         cout<<"track_state:"<<track_state<<endl;
@@ -397,11 +646,18 @@ int main(int argc, char** argv)
         // ROS_INFO("%f ms",1000*(end-begin).toSec());
         // cv_ptr.reset();
     }
-    plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/error.dat", "matlab");
-    plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/vc.dat", "matlab");
-    task.kill();
+    plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/T0error.dat", "matlab");
+    plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/T0vc.dat", "matlab");
+    plotter.saveData(2, "/home/abner/catkin_ws/src/ibvs/log/T1error.dat", "matlab");
+    plotter.saveData(3, "/home/abner/catkin_ws/src/ibvs/log/T1vc.dat", "matlab");
+
+    oFile_uav.close();
+    oFile_ugv.close();
+
+    task_a.kill();
+    task_b.kill();
     apriltag_detector_destroy(td);
-    tag36h11_destroy(tf);
+    tag25h10_destroy(tf);
     // tag9h4_destroy(tf);
 
     return 0;
