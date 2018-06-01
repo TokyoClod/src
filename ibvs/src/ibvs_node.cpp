@@ -40,6 +40,9 @@
 using namespace std;
 using namespace cv;
 
+#define debug_flag 1
+#define export_flag 1
+
 vpCameraParameters cam;
 vpImage<unsigned char> dst; 
 geometry_msgs::TwistStamped vel_skew, vel_skew_a, vel_skew_b;
@@ -87,22 +90,33 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "ibvs_node");
     ros::NodeHandle nh;
     ros::Rate rate(10.0);
-
+    
+    /*************************** 初始化存储位置 ****************************/
     ofstream oFile_uav, oFile_ugv; 
     oFile_uav.open("/home/abner/catkin_ws/src/ibvs/log/uav_pose.csv", ios::out | ios::trunc);  
     oFile_ugv.open("/home/abner/catkin_ws/src/ibvs/log/ugv_pose.csv", ios::out | ios::trunc);  
     oFile_uav << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;   
-    oFile_ugv << "iter" << "," << "x" << "," << "y" << "," << "z" << endl; 
-    // oFile_uav << "姓名" << "," << "年龄" << "," << "班级" << "," << "班主任" << endl;    
+    oFile_ugv << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;  
 
+    /*************************** 从参数服务器读取参数 ****************************/
     double target_pixel_size_a, target_pixel_size_b, target_real_size_a, target_real_size_b;
-
     ros::param::get("~target_pixel_size_a", target_pixel_size_a);
     ros::param::get("~target_pixel_size_b", target_pixel_size_b);
     cout<<"target_pixel_size_a:"<<target_pixel_size_a<<" target_pixel_size_b:"<<target_pixel_size_b<<endl;
     ros::param::get("~target_real_size_a", target_real_size_a);
     ros::param::get("~target_real_size_b", target_real_size_b);
 
+    double lambda0,lambdaoo,lambda0_d;
+    ros::param::get("~lambda0", lambda0);
+    ros::param::get("~lambdaoo", lambdaoo);
+    ros::param::get("~lambda0_d", lambda0_d);
+
+    double controller_P,controller_I,controller_D;
+    ros::param::get("~controller_P", controller_P);
+    ros::param::get("~controller_I", controller_I);
+    ros::param::get("~controller_D", controller_D);
+
+    /*************************** 初始化发布器与订阅器 ****************************/
     sensor_msgs::Image img_out;
     image_transport::ImageTransport it(nh);
     image_transport::CameraSubscriber camera_image = it.subscribeCamera("/iris/camera_downward/image_raw", 10, imageCallback);
@@ -114,7 +128,7 @@ int main(int argc, char** argv)
     ros::Subscriber ugv_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ugv_ground_truth/state", 10, ugv_pos_cb);  //????
     ros::Subscriber uav_pos_sub = nh.subscribe<nav_msgs::Odometry>("/ground_truth", 10, uav_pos_cb);
     
-    // Initialize tag detector with options
+    /*************************** 初始化apriltag检测器 ****************************/
     apriltag_family_t *tf = NULL;
     tf = tag25h10_create();
     // tf = tag9h4_create();
@@ -137,24 +151,17 @@ int main(int argc, char** argv)
     std_msgs::Int8 track_state;
     track_state.data = 0;
 
+    /*************************** 初始化视觉伺服任务 ****************************/
     vpServo task_a, task_b ;
     task_a.setServo(vpServo::EYEINHAND_CAMERA);
     task_a.setInteractionMatrixType(vpServo::CURRENT);
     task_b.setServo(vpServo::EYEINHAND_CAMERA);
     task_b.setInteractionMatrixType(vpServo::CURRENT);
 
-    double lambda0,lambdaoo,lambda0_d;
-    ros::param::get("~lambda0", lambda0);
-    ros::param::get("~lambdaoo", lambdaoo);
-    ros::param::get("~lambda0_d", lambda0_d);
-    vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
+    // vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
     task_a.setLambda(0.4);
     task_b.setLambda(0.2);
 
-    double controller_P,controller_I,controller_D;
-    ros::param::get("~controller_P", controller_P);
-    ros::param::get("~controller_I", controller_I);
-    ros::param::get("~controller_D", controller_D);
     PID_position pid(controller_P, controller_I, controller_D);
 
     //double Zd = 1.074;  
@@ -162,9 +169,8 @@ int main(int argc, char** argv)
     vpFeaturePoint ppa[4], ppb[4], pda[4] ,pdb[4];
     cout<<"px:"<<cam.get_px()<<", py:"<<cam.get_py()<<endl;
 
-    //double target_pixel_size
-    //double target_real_size = 0.80;
-    /********************** First feature (x,y) ***********************/
+
+    /********************** First feature (x,y) 点特征 ***********************/
     #pragma region firstfeature
     double u_1a = (640 + target_pixel_size_a) / 2.0;
     double v_1a = (480 + target_pixel_size_a) / 2.0;
@@ -203,7 +209,7 @@ int main(int argc, char** argv)
     ppb[3].buildFrom((u_2b-u0) / cam.get_px(), (v_1b-v0) / cam.get_py(), Zd_b);
     #pragma endregion firstfeature
 
-    /********************** Second feature log (Z/Zd) ***********************/
+    /********************** Second feature log (Z/Zd) Log高度特征 ***********************/
     #pragma region secondfeature
     vpGenericFeature logZd_a(1); 
     vpGenericFeature logZd_b(1);
@@ -265,12 +271,7 @@ int main(int argc, char** argv)
         plotter.setLegend(3, 5, "w_z");
     #endif
 
-    
-    // vpImagePoint point[4];
-    // point[0].set_u(420);point[0].set_v(340);
-    // point[1].set_u(420);point[0].set_v(140);
-    // point[2].set_u(220);point[0].set_v(140);
-    // point[3].set_u(220);point[0].set_v(340);
+    /********************** 给伺服任务添加特征 ***********************/
     for (unsigned int i = 0 ; i < 4 ; i++) {
         // vpFeatureBuilder::create(pp[i], cam, point[i]);
         task_a.addFeature(ppa[i], pda[i]);
@@ -284,8 +285,6 @@ int main(int argc, char** argv)
     cout<<endl;
     task_b.addFeature(logZ_b, logZd_b);
     task_b.print();
-
-    //ibvs ends
 
     // tf::TransformListener listener;
 
@@ -310,10 +309,11 @@ int main(int argc, char** argv)
                 .buf = gray.data
             };
 
+            // AprilTag检测
             zarray_t *detections = apriltag_detector_detect(td, &im);
             // cout << zarray_size(detections) << " tags detected" << endl;
 
-            // Draw detection outlines
+            // Draw detection outlines and update features
             for (int i = 0; i < zarray_size(detections); i++) {
                 apriltag_detection_t *det;
                 zarray_get(detections, i, &det);
@@ -357,16 +357,15 @@ int main(int argc, char** argv)
                     stringstream ss;
                     ss<<i;
                     text = ss.str();
-                    putText(cv_ptr->image, text, Point(det->p[i][0]-5,
-                                        det->p[i][1]-5),
-                        fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
+                    putText(cv_ptr->image, text, Point(det->p[i][0]-5, det->p[i][1]-5),
+                            fontface, fontscale, Scalar(0xff, 0x99, 0), 2);
                     double X = (det->p[i][0]-u0) / cam.get_px();
                     double Y = (det->p[i][1]-v0) / cam.get_py();  
                     if(det->id == 0){
-                        double Za = target_real_size_a / temp * cam.get_px()+1.2; //需要更稳定的估计方法
+                        double Za = target_real_size_a / temp * cam.get_px()+1.2; //高度估计
                         ppa[i].buildFrom(X, Y, Za); 
                         s0 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
-                        cout<<"s0:"<<s0<<endl;
+                        // cout<<"s0:"<<s0<<endl;
                         flag_task_a = 1;
 
                         logZ_a.set_s(log(Za));
@@ -378,10 +377,10 @@ int main(int argc, char** argv)
                         logZ_a.setInteractionMatrix(LlogZa);
                     }
                     else if(det->id == 1){
-                        double Zb = target_real_size_b / temp * cam.get_px()+1.2; //需要更稳定的估计方法
+                        double Zb = target_real_size_b / temp * cam.get_px()+1.2; //高度估计
                         ppb[i].buildFrom(X, Y, Zb); 
                         s1 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
-                        cout<<"s1:"<<s1<<endl;
+                        // cout<<"s1:"<<s1<<endl;
                         if(s1>2500) 
                         {flag_task_b = 1;}
 
@@ -400,19 +399,14 @@ int main(int argc, char** argv)
                     // pp[i].buildFrom(X, Y, Z);            
                     //cout<<"pp["<<i<<"]=:"<<pp[i].get_x()<<","<<pp[i].get_y()<<","<<pp[i].get_Z()<<endl;   
                 }
-                
-                // logZ.set_s(log(Z));
-                // vpMatrix LlogZ(1, 6);
-                // LlogZ[0][0] = LlogZ[0][1] = LlogZ[0][5] = 0;
-                // LlogZ[0][2] = -1 / Z;
-                // LlogZ[0][3] = -pp[0].get_y();
-                // LlogZ[0][4] = pp[0].get_x();
-                // logZ.setInteractionMatrix(LlogZ);
 
                 delete det;                     
             }
-            cout<<"flag_task_a:"<<flag_task_a<<" flag_task_b:"<<flag_task_b<<endl;
-            /**************  内部图标优先 ***********/
+            #ifdef debug_flag
+                cout<<"flag_a:"<<flag_task_a<<" flag_b:"<<flag_task_b<<"\t";
+            #endif
+
+            /**************  计算IBVS控制器的输出参考速度：内部图标优先 ***********/
             if (flag_task_b == 1){ 
                 track_state.data = 1;   
                 /**************  Using IBVS with PID ***********/
@@ -468,6 +462,7 @@ int main(int argc, char** argv)
                 // cout << "durationT:" << durationT << endl;
      
             }
+            /**************  计算IBVS控制器的输出参考速度：外部图标 ***********/
             if (flag_task_a == 1){ 
                 track_state.data = 1;   
                 /**************  Using IBVS with PID ***********/
@@ -508,20 +503,6 @@ int main(int argc, char** argv)
                 // plotter.plot(2, i/ter, task_b.getError());
                 // plotter.plot(3, iter, f_v);
 
-                //judge land situation
-                // if(e < 0.001){
-                //     durationT += 0.1;
-                //     if(durationT > 3.0){
-                //         track_state.data = 2;
-                //         track_state_pub.publish(track_state);
-                //         return 0;
-                //     }
-                // }
-                // else{
-                //     durationT = 0;
-                // }
-                // cout << "durationT:" << durationT << endl;
-     
             }
             if ((flag_task_a || flag_task_b) == 0){
                 track_state.data = 0;
@@ -533,80 +514,12 @@ int main(int argc, char** argv)
                 vel_skew.twist.angular.z = 0;
             }
 
-
-            
-            // ibvs part
-            // if (zarray_size(detections) > 0){ 
-            //     track_state.data = 1;   
-            //     /**************  Using IBVS with PID ***********/
-            //     // vpColVector pre_error = task_a.computeError();
-            //     // unsigned int dimError = pre_error.getRows();
-            //     // vpColVector new_error(dimError);
-            //     // for (unsigned int k = 0; k <  dimError; k++) {
-            //     //     new_error[k] = pid.pid_control(pre_error[k]);
-            //     //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
-            //     // }
-            //     // task_a.setError(new_error);
-            //     // vpColVector v = task_a.computeControlLaw_pid();
-
-            //     /**************  Using IBVS without PID ***********/
-            //     vpColVector v = task_a.computeControlLaw();
-            //     double e = ( task_a.getError() ).sumSquare();
-            //     cout<<"e=:"<<e<<endl;
-                
-            //     vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
-            //     vpVelocityTwistMatrix fVc;
-            //     //fVc.buildFrom((wMc*cMo).inverse() * wMu);
-            //     fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
-            //     vpColVector f_v(6);
-            //     // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
-            //     //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
-            //     f_v = fVc * v;
-            //     // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
-                
-            //     vel_skew.twist.linear.x = f_v[0];
-            //     vel_skew.twist.linear.y = f_v[1];
-            //     vel_skew.twist.linear.z = f_v[2];
-            //     //vel_skew.twist.angular.x = f_v[3];
-            //     //vel_skew.twist.angular.y = f_v[4];
-            //     vel_skew.twist.angular.z = f_v[5];
-
-            //     plotter.plot(0, iter, task_a.getError());
-            //     plotter.plot(1, iter, v);
-            //     plotter.plot(2, iter, task_b.getError());
-            //     plotter.plot(3, iter, v);
-
-            //     //judge land situation
-            //     if(e < 0.001){
-            //         durationT += 0.1;
-            //         if(durationT > 3.0){
-            //             track_state.data = 2;
-            //             track_state_pub.publish(track_state);
-            //             return 0;
-            //         }
-            //     }
-            //     else{
-            //         durationT = 0;
-            //     }
-            //     cout << "durationT:" << durationT << endl;
-     
-            // }
-            // else{
-            //     track_state.data = 0;
-            //     vel_skew.twist.linear.x = 0;
-            //     vel_skew.twist.linear.y = 0;
-            //     vel_skew.twist.linear.z = 0;
-            //     vel_skew.twist.angular.x = 0;
-            //     vel_skew.twist.angular.y = 0;
-            //     vel_skew.twist.angular.z = 0;
-            // }
             zarray_destroy(detections);
             outimg_pub.publish(cv_ptr->toImageMsg());
 
         }
-        else{}
+        else{} // 避免cv_bridge没获得图像信息
 
-        
         oFile_uav << iter << "," << uav_pose.position.x << "," << uav_pose.position.y << "," << uav_pose.position.z << endl;   
         oFile_ugv << iter << "," << ugv_pose.position.x << "," << ugv_pose.position.y << "," << ugv_pose.position.z << endl;
        
@@ -615,13 +528,22 @@ int main(int argc, char** argv)
         
         // imshow("Tag Detections", cv_ptr->image);
 
-        if(flag_task_b==1){
-            cout<<"e1=:"<<e1<<" ";
-        }
-        if(flag_task_a==1){
-            cout<<"e0=:"<<e0<<" ";
-        }  
-        // cout<<endl;
+        /**************  debug show ***********/
+        #ifdef VISP_HAVE_DISPLAY
+            if(flag_task_b==1){
+                cout<<"e1=:"<< e1 <<" s1:" << s1 <<" ";
+            }
+            else{
+                cout<<"e1=:NULL" <<" s1:" << "NULL ";
+            }
+            if(flag_task_a==1){
+                cout<<"e0=:"<< e0 <<" s0:" << s0 <<" ";
+            }
+            else{
+                cout<<"e0=:NULL" <<" s0:" << "NULL ";
+            }
+            cout<<endl;
+        #endif
 
         if(flag_task_b==1){
             vel_pub.publish(vel_skew_b);
@@ -637,7 +559,7 @@ int main(int argc, char** argv)
         // vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
-        cout<<"track_state:"<<track_state<<endl;
+        // cout<<"track_state:"<<track_state<<endl;
         track_state_pub.publish(track_state);
         // waitKey(30);
         ros::spinOnce();
@@ -646,13 +568,15 @@ int main(int argc, char** argv)
         // ROS_INFO("%f ms",1000*(end-begin).toSec());
         // cv_ptr.reset();
     }
-    plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/T0error.dat", "matlab");
-    plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/T0vc.dat", "matlab");
-    plotter.saveData(2, "/home/abner/catkin_ws/src/ibvs/log/T1error.dat", "matlab");
-    plotter.saveData(3, "/home/abner/catkin_ws/src/ibvs/log/T1vc.dat", "matlab");
+    #ifdef export_flag
+        plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/T0error.dat", "matlab");
+        plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/T0vc.dat", "matlab");
+        plotter.saveData(2, "/home/abner/catkin_ws/src/ibvs/log/T1error.dat", "matlab");
+        plotter.saveData(3, "/home/abner/catkin_ws/src/ibvs/log/T1vc.dat", "matlab");
 
-    oFile_uav.close();
-    oFile_ugv.close();
+        oFile_uav.close();
+        oFile_ugv.close();
+    #endif
 
     task_a.kill();
     task_b.kill();
