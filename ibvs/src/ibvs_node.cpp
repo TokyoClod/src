@@ -40,9 +40,6 @@
 using namespace std;
 using namespace cv;
 
-#define debug_flag 1
-#define export_flag 1
-
 vpCameraParameters cam;
 vpImage<unsigned char> dst; 
 geometry_msgs::TwistStamped vel_skew, vel_skew_a, vel_skew_b;
@@ -111,10 +108,19 @@ int main(int argc, char** argv)
     ros::param::get("~lambdaoo", lambdaoo);
     ros::param::get("~lambda0_d", lambda0_d);
 
-    double controller_P,controller_I,controller_D;
-    ros::param::get("~controller_P", controller_P);
-    ros::param::get("~controller_I", controller_I);
-    ros::param::get("~controller_D", controller_D);
+    double Pa,Ia,Da,Pb,Ib,Db;
+    ros::param::get("~Pa", Pa);
+    ros::param::get("~Ia", Ia);
+    ros::param::get("~Da", Da);
+    ros::param::get("~Pb", Pb);
+    ros::param::get("~Ib", Ib);
+    ros::param::get("~Db", Db);
+
+    int debug_flag, export_flag, pid_flag, taskb_flag;
+    ros::param::get("~debug_flag", debug_flag);
+    ros::param::get("~export_flag", export_flag);
+    ros::param::get("~pid_flag", pid_flag);
+    ros::param::get("~taskb_flag", taskb_flag);
 
     /*************************** 初始化发布器与订阅器 ****************************/
     sensor_msgs::Image img_out;
@@ -162,7 +168,9 @@ int main(int argc, char** argv)
     task_a.setLambda(0.4);
     task_b.setLambda(0.2);
 
-    PID_position pid(controller_P, controller_I, controller_D);
+    /*************************** 初始化PID速度补偿 ****************************/
+    PID_position pid_a(Pa, Ia, Da);
+    PID_position pid_b(Pb, Ib, Db);
 
     //double Zd = 1.074;  
     ros::spinOnce();
@@ -225,16 +233,20 @@ int main(int argc, char** argv)
     #pragma endregion secondfeature
     
     #ifdef VISP_HAVE_DISPLAY
-        vpPlot plotter(4, 250*2, 500*2, 100, 200, "Real time curves plotter");
+        vpPlot plotter(4, 250*3, 500*2, 100, 200, "Real time curves plotter");
         plotter.setTitle(0, "T0 Visual features error");
         plotter.setTitle(1, "T0 Camera velocities");
         plotter.setTitle(2, "T1 Visual features error");
         plotter.setTitle(3, "T1 Camera velocities");
+        plotter.setTitle(4, "Overall Visual features error");
+        plotter.setTitle(5, "Overall Camera velocities");
 
         plotter.initGraph(0, 9);
         plotter.initGraph(1, 6);
         plotter.initGraph(2, 9);
         plotter.initGraph(3, 6);
+        plotter.initGraph(4, 9);
+        plotter.initGraph(5, 6);
 
         plotter.setLegend(0, 0, "x1");
         plotter.setLegend(0, 1, "y1");
@@ -269,6 +281,23 @@ int main(int argc, char** argv)
         plotter.setLegend(3, 3, "w_x");
         plotter.setLegend(3, 4, "w_y");
         plotter.setLegend(3, 5, "w_z");
+        
+        plotter.setLegend(4, 0, "x1");
+        plotter.setLegend(4, 1, "y1");
+        plotter.setLegend(4, 2, "x2");
+        plotter.setLegend(4, 3, "y2");
+        plotter.setLegend(4, 4, "x3");
+        plotter.setLegend(4, 5, "y3");
+        plotter.setLegend(4, 6, "x4");
+        plotter.setLegend(4, 7, "y4");
+        plotter.setLegend(4, 8, "z");
+
+        plotter.setLegend(5, 0, "v_x");
+        plotter.setLegend(5, 1, "v_y");
+        plotter.setLegend(5, 2, "v_z");
+        plotter.setLegend(5, 3, "w_x");
+        plotter.setLegend(5, 4, "w_y");
+        plotter.setLegend(5, 5, "w_z");
     #endif
 
     /********************** 给伺服任务添加特征 ***********************/
@@ -381,8 +410,9 @@ int main(int argc, char** argv)
                         ppb[i].buildFrom(X, Y, Zb); 
                         s1 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
                         // cout<<"s1:"<<s1<<endl;
-                        if(s1>2500) 
-                        {flag_task_b = 1;}
+                        if (taskb_flag){
+                            if(s1 > 2500)  flag_task_b = 1;
+                        }    
 
                         logZ_b.set_s(log(Zb));
                         vpMatrix LlogZb(1, 6);
@@ -402,49 +432,91 @@ int main(int argc, char** argv)
 
                 delete det;                     
             }
-            #ifdef debug_flag
+            if(debug_flag)
                 cout<<"flag_a:"<<flag_task_a<<" flag_b:"<<flag_task_b<<"\t";
-            #endif
+            
+
+            
+            vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
+            vpVelocityTwistMatrix fVc;
+            //fVc.buildFrom((wMc*cMo).inverse() * wMu);
+            fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
+            vpColVector f_v(6), v(6);
+
+            /**************  计算IBVS控制器的输出参考速度：外部图标 ***********/
+            if (flag_task_a == 1){ 
+                track_state.data = 1;         
+                if(pid_flag){
+                    /**************  Using IBVS with PID ***********/
+                    vpColVector pre_error = task_a.computeError();
+                    unsigned int dimError = pre_error.getRows();
+                    vpColVector new_error(dimError);
+                    for (unsigned int k = 0; k <  dimError; k++) {
+                        new_error[k] = pid_a.pid_control(pre_error[k]);
+                        // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+                    }
+                    task_a.setError(new_error);
+                    v = task_a.computeControlLaw_pid();
+                    e0 = new_error.sumSquare();
+                    plotter.plot(0, iter, new_error);
+                }
+                else{
+                    /**************  Using IBVS without PID ***********/
+                    v = task_a.computeControlLaw();
+                    e0 = ( task_a.getError() ).sumSquare();
+                    plotter.plot(0, iter, task_a.getError());
+                }
+              
+                f_v = fVc * v;
+                // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
+                
+                vel_skew_a.twist.linear.x = f_v[0];
+                vel_skew_a.twist.linear.y = f_v[1];
+                vel_skew_a.twist.linear.z = f_v[2];
+                vel_skew_a.twist.angular.z = f_v[5];
+
+                // plotter.plot(0, iter, task_a.getError());
+                plotter.plot(1, iter, f_v);
+                // plotter.plot(2, i/ter, task_b.getError());
+                // plotter.plot(3, iter, f_v);
+            }
 
             /**************  计算IBVS控制器的输出参考速度：内部图标优先 ***********/
             if (flag_task_b == 1){ 
-                track_state.data = 1;   
-                /**************  Using IBVS with PID ***********/
-                // vpColVector pre_error = task_a.computeError();
-                // unsigned int dimError = pre_error.getRows();
-                // vpColVector new_error(dimError);
-                // for (unsigned int k = 0; k <  dimError; k++) {
-                //     new_error[k] = pid.pid_control(pre_error[k]);
-                //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
-                // }
-                // task_a.setError(new_error);
-                // vpColVector v = task_a.computeControlLaw_pid();
-
-                /**************  Using IBVS without PID ***********/
-                vpColVector v = task_b.computeControlLaw();
-                e1 = ( task_b.getError() ).sumSquare();
+                track_state.data = 1;          
+                if (pid_flag){
+                    /**************  Using IBVS with PID ***********/
+                    vpColVector pre_error = task_b.computeError();
+                    unsigned int dimError = pre_error.getRows();
+                    vpColVector new_error(dimError);
+                    for (unsigned int k = 0; k <  dimError; k++) {
+                        new_error[k] = pid_b.pid_control(pre_error[k]);
+                        // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
+                    }
+                    task_b.setError(new_error);
+                    v = task_b.computeControlLaw_pid();
+                    e1 = new_error.sumSquare();
+                    plotter.plot(2, iter, new_error);
+                }
+                else{
+                    /**************  Using IBVS without PID ***********/
+                    v = task_b.computeControlLaw();
+                    e1 = ( task_b.getError() ).sumSquare();
+                    plotter.plot(2, iter, task_b.getError());
+                }
                 // cout<<"e1=:"<<e1<<endl;
                 
-                vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
-                vpVelocityTwistMatrix fVc;
-                //fVc.buildFrom((wMc*cMo).inverse() * wMu);
-                fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
-                vpColVector f_v(6);
-                // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
-                //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
                 f_v = fVc * v;
                 // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
                 
                 vel_skew_b.twist.linear.x = f_v[0];
                 vel_skew_b.twist.linear.y = f_v[1];
                 vel_skew_b.twist.linear.z = f_v[2];
-                //vel_skew.twist.angular.x = f_v[3];
-                //vel_skew.twist.angular.y = f_v[4];
                 vel_skew_b.twist.angular.z = f_v[5];
 
                 // plotter.plot(0, iter, task_a.getError());
                 // plotter.plot(1, iter, v);
-                plotter.plot(2, iter, task_b.getError());
+                // plotter.plot(2, iter, task_b.getError());
                 plotter.plot(3, iter, f_v);
 
                 //judge land situation
@@ -462,48 +534,7 @@ int main(int argc, char** argv)
                 // cout << "durationT:" << durationT << endl;
      
             }
-            /**************  计算IBVS控制器的输出参考速度：外部图标 ***********/
-            if (flag_task_a == 1){ 
-                track_state.data = 1;   
-                /**************  Using IBVS with PID ***********/
-                // vpColVector pre_error = task_a.computeError();
-                // unsigned int dimError = pre_error.getRows();
-                // vpColVector new_error(dimError);
-                // for (unsigned int k = 0; k <  dimError; k++) {
-                //     new_error[k] = pid.pid_control(pre_error[k]);
-                //     // std::cout << "new_error "<<k<<":"<<pre_error[k]<<std::endl;
-                // }
-                // task_a.setError(new_error);
-                // vpColVector v = task_a.computeControlLaw_pid();
-
-                /**************  Using IBVS without PID ***********/
-                vpColVector v = task_a.computeControlLaw();
-                e0 = ( task_a.getError() ).sumSquare();
-                // cout<<"e0=:"<<e0<<endl;
-                
-                vpHomogeneousMatrix cMo(vpTranslationVector(0, 0, 0), vpRotationMatrix(vpRzyxVector(-1.5708, 0, 3.1416))); 
-                vpVelocityTwistMatrix fVc;
-                //fVc.buildFrom((wMc*cMo).inverse() * wMu);
-                fVc.buildFrom((wMc*cMo)); //transfer the velocity from camera frame to World Frame
-                vpColVector f_v(6);
-                // cout<<endl<<"fVc:\n"<<fVc<<endl<<endl;
-                //cout<<endl<<"wMc:\n"<<wMc<<endl<<endl;
-                f_v = fVc * v;
-                // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
-                
-                vel_skew_a.twist.linear.x = f_v[0];
-                vel_skew_a.twist.linear.y = f_v[1];
-                vel_skew_a.twist.linear.z = f_v[2];
-                //vel_skew.twist.angular.x = f_v[3];
-                //vel_skew.twist.angular.y = f_v[4];
-                vel_skew_a.twist.angular.z = f_v[5];
-
-                plotter.plot(0, iter, task_a.getError());
-                plotter.plot(1, iter, f_v);
-                // plotter.plot(2, i/ter, task_b.getError());
-                // plotter.plot(3, iter, f_v);
-
-            }
+            
             if ((flag_task_a || flag_task_b) == 0){
                 track_state.data = 0;
                 vel_skew.twist.linear.x = 0;
@@ -529,27 +560,32 @@ int main(int argc, char** argv)
         // imshow("Tag Detections", cv_ptr->image);
 
         /**************  debug show ***********/
-        #ifdef VISP_HAVE_DISPLAY
+        if (debug_flag){
             if(flag_task_b==1){
-                cout<<"e1=:"<< e1 <<" s1:" << s1 <<" ";
+                cout<<"e1=:"<< e1 <<" s1:" << s1 << "\t";
             }
             else{
-                cout<<"e1=:NULL" <<" s1:" << "NULL ";
+                cout<<"e1=:NULL" <<" s1:" <<" NULL" << "\t";
             }
             if(flag_task_a==1){
                 cout<<"e0=:"<< e0 <<" s0:" << s0 <<" ";
             }
             else{
-                cout<<"e0=:NULL" <<" s0:" << "NULL ";
+                cout<<"e0=:NULL" <<" s0:" <<" NULL";
             }
             cout<<endl;
-        #endif
+        } 
 
+        /**************  发布速度指令 ***********/
         if(flag_task_b==1){
             vel_pub.publish(vel_skew_b);
+            // plotter.plot(4, iter, );
+            plotter.plot(5, iter, f_v);
         }
         else if(flag_task_a==1){
             vel_pub.publish(vel_skew_a);
+            // plotter.plot(4, iter, );
+            plotter.plot(5, iter, f_v);
         }
         else{
             // ROS_ERROR("#2:No This ID!!")
@@ -568,15 +604,18 @@ int main(int argc, char** argv)
         // ROS_INFO("%f ms",1000*(end-begin).toSec());
         // cv_ptr.reset();
     }
-    #ifdef export_flag
+    if (export_flag){
         plotter.saveData(0, "/home/abner/catkin_ws/src/ibvs/log/T0error.dat", "matlab");
         plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/T0vc.dat", "matlab");
         plotter.saveData(2, "/home/abner/catkin_ws/src/ibvs/log/T1error.dat", "matlab");
         plotter.saveData(3, "/home/abner/catkin_ws/src/ibvs/log/T1vc.dat", "matlab");
+        plotter.saveData(4, "/home/abner/catkin_ws/src/ibvs/log/Overallerror.dat", "matlab");
+        plotter.saveData(5, "/home/abner/catkin_ws/src/ibvs/log/Overallvc.dat", "matlab");
 
         oFile_uav.close();
         oFile_ugv.close();
-    #endif
+    }
+    
 
     task_a.kill();
     task_b.kill();
