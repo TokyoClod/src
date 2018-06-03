@@ -73,6 +73,7 @@ void uav_pos_cb(const nav_msgs::Odometry::ConstPtr& msg_uav_odom){
     uav_pose = uav_odom.pose.pose;
     wMc = visp_bridge::toVispHomogeneousMatrix(uav_pose);
 }
+
 double get_area(double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3 ){
     double s;
     s = 0.5*(x0*y1 - x1*y0+\
@@ -233,20 +234,16 @@ int main(int argc, char** argv)
     #pragma endregion secondfeature
     
     #ifdef VISP_HAVE_DISPLAY
-        vpPlot plotter(4, 250*3, 500*2, 100, 200, "Real time curves plotter");
+        vpPlot plotter(4, 250*2, 500*2, 100, 200, "Real time curves plotter");
         plotter.setTitle(0, "T0 Visual features error");
         plotter.setTitle(1, "T0 Camera velocities");
         plotter.setTitle(2, "T1 Visual features error");
         plotter.setTitle(3, "T1 Camera velocities");
-        plotter.setTitle(4, "Overall Visual features error");
-        plotter.setTitle(5, "Overall Camera velocities");
 
         plotter.initGraph(0, 9);
         plotter.initGraph(1, 6);
         plotter.initGraph(2, 9);
         plotter.initGraph(3, 6);
-        plotter.initGraph(4, 9);
-        plotter.initGraph(5, 6);
 
         plotter.setLegend(0, 0, "x1");
         plotter.setLegend(0, 1, "y1");
@@ -281,23 +278,6 @@ int main(int argc, char** argv)
         plotter.setLegend(3, 3, "w_x");
         plotter.setLegend(3, 4, "w_y");
         plotter.setLegend(3, 5, "w_z");
-        
-        plotter.setLegend(4, 0, "x1");
-        plotter.setLegend(4, 1, "y1");
-        plotter.setLegend(4, 2, "x2");
-        plotter.setLegend(4, 3, "y2");
-        plotter.setLegend(4, 4, "x3");
-        plotter.setLegend(4, 5, "y3");
-        plotter.setLegend(4, 6, "x4");
-        plotter.setLegend(4, 7, "y4");
-        plotter.setLegend(4, 8, "z");
-
-        plotter.setLegend(5, 0, "v_x");
-        plotter.setLegend(5, 1, "v_y");
-        plotter.setLegend(5, 2, "v_z");
-        plotter.setLegend(5, 3, "w_x");
-        plotter.setLegend(5, 4, "w_y");
-        plotter.setLegend(5, 5, "w_z");
     #endif
 
     /********************** 给伺服任务添加特征 ***********************/
@@ -458,13 +438,11 @@ int main(int argc, char** argv)
                     task_a.setError(new_error);
                     v = task_a.computeControlLaw_pid();
                     e0 = new_error.sumSquare();
-                    plotter.plot(0, iter, new_error);
                 }
                 else{
                     /**************  Using IBVS without PID ***********/
                     v = task_a.computeControlLaw();
                     e0 = ( task_a.getError() ).sumSquare();
-                    plotter.plot(0, iter, task_a.getError());
                 }
               
                 f_v = fVc * v;
@@ -475,7 +453,7 @@ int main(int argc, char** argv)
                 vel_skew_a.twist.linear.z = f_v[2];
                 vel_skew_a.twist.angular.z = f_v[5];
 
-                // plotter.plot(0, iter, task_a.getError());
+                plotter.plot(0, iter, task_a.getError());
                 plotter.plot(1, iter, f_v);
                 // plotter.plot(2, i/ter, task_b.getError());
                 // plotter.plot(3, iter, f_v);
@@ -496,13 +474,11 @@ int main(int argc, char** argv)
                     task_b.setError(new_error);
                     v = task_b.computeControlLaw_pid();
                     e1 = new_error.sumSquare();
-                    plotter.plot(2, iter, new_error);
                 }
                 else{
                     /**************  Using IBVS without PID ***********/
                     v = task_b.computeControlLaw();
                     e1 = ( task_b.getError() ).sumSquare();
-                    plotter.plot(2, iter, task_b.getError());
                 }
                 // cout<<"e1=:"<<e1<<endl;
                 
@@ -516,7 +492,7 @@ int main(int argc, char** argv)
 
                 // plotter.plot(0, iter, task_a.getError());
                 // plotter.plot(1, iter, v);
-                // plotter.plot(2, iter, task_b.getError());
+                plotter.plot(2, iter, task_b.getError());
                 plotter.plot(3, iter, f_v);
 
                 //judge land situation
@@ -579,13 +555,9 @@ int main(int argc, char** argv)
         /**************  发布速度指令 ***********/
         if(flag_task_b==1){
             vel_pub.publish(vel_skew_b);
-            // plotter.plot(4, iter, );
-            plotter.plot(5, iter, f_v);
         }
         else if(flag_task_a==1){
             vel_pub.publish(vel_skew_a);
-            // plotter.plot(4, iter, );
-            plotter.plot(5, iter, f_v);
         }
         else{
             // ROS_ERROR("#2:No This ID!!")
@@ -609,8 +581,6 @@ int main(int argc, char** argv)
         plotter.saveData(1, "/home/abner/catkin_ws/src/ibvs/log/T0vc.dat", "matlab");
         plotter.saveData(2, "/home/abner/catkin_ws/src/ibvs/log/T1error.dat", "matlab");
         plotter.saveData(3, "/home/abner/catkin_ws/src/ibvs/log/T1vc.dat", "matlab");
-        plotter.saveData(4, "/home/abner/catkin_ws/src/ibvs/log/Overallerror.dat", "matlab");
-        plotter.saveData(5, "/home/abner/catkin_ws/src/ibvs/log/Overallvc.dat", "matlab");
 
         oFile_uav.close();
         oFile_ugv.close();
