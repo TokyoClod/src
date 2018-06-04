@@ -46,7 +46,7 @@ geometry_msgs::TwistStamped vel_skew, vel_skew_a, vel_skew_b;
 cv_bridge::CvImageConstPtr cv_ptr;
 vpHomogeneousMatrix wMc, wMu;
 geometry_msgs::Pose ugv_pose, uav_pose;
-double durationT;
+double durationT, switchT;
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {   
@@ -83,6 +83,14 @@ double get_area(double x0, double y0, double x1, double y1, double x2, double y2
     return s > 0 ? s : -s;
 }
 
+void velConstrain(vpColVector &v, double maxValue){
+    unsigned int dim = v.getRows();
+    for (unsigned int k = 0; k <  dim; k++) {
+        v[k] = v[k] < maxValue ? v[k] : maxValue;
+        v[k] = v[k] > -maxValue ? v[k] : -maxValue;
+    }
+}
+
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "ibvs_node");
@@ -117,11 +125,12 @@ int main(int argc, char** argv)
     ros::param::get("~Ib", Ib);
     ros::param::get("~Db", Db);
 
-    int debug_flag, export_flag, pid_flag, taskb_flag;
+    int debug_flag, export_flag, pid_flag, taskb_flag, velcontrain_flag;
     ros::param::get("~debug_flag", debug_flag);
     ros::param::get("~export_flag", export_flag);
     ros::param::get("~pid_flag", pid_flag);
     ros::param::get("~taskb_flag", taskb_flag);
+    ros::param::get("~velcontrain_flag", velcontrain_flag);
 
     /*************************** 初始化发布器与订阅器 ****************************/
     sensor_msgs::Image img_out;
@@ -166,8 +175,8 @@ int main(int argc, char** argv)
     task_b.setInteractionMatrixType(vpServo::CURRENT);
 
     // vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
-    task_a.setLambda(0.4);
-    task_b.setLambda(0.2);
+    task_a.setLambda(0.5);
+    task_b.setLambda(0.3);
 
     /*************************** 初始化PID速度补偿 ****************************/
     PID_position pid_a(Pa, Ia, Da);
@@ -240,9 +249,9 @@ int main(int argc, char** argv)
         plotter.setTitle(2, "T1 Visual features error");
         plotter.setTitle(3, "T1 Camera velocities");
 
-        plotter.initGraph(0, 9);
+        plotter.initGraph(0, 8);
         plotter.initGraph(1, 6);
-        plotter.initGraph(2, 9);
+        plotter.initGraph(2, 8);
         plotter.initGraph(3, 6);
 
         plotter.setLegend(0, 0, "x1");
@@ -253,7 +262,7 @@ int main(int argc, char** argv)
         plotter.setLegend(0, 5, "y3");
         plotter.setLegend(0, 6, "x4");
         plotter.setLegend(0, 7, "y4");
-        plotter.setLegend(0, 8, "z");
+        // plotter.setLegend(0, 8, "z");
 
         plotter.setLegend(1, 0, "v_x");
         plotter.setLegend(1, 1, "v_y");
@@ -270,7 +279,7 @@ int main(int argc, char** argv)
         plotter.setLegend(2, 5, "y3");
         plotter.setLegend(2, 6, "x4");
         plotter.setLegend(2, 7, "y4");
-        plotter.setLegend(2, 8, "z");
+        // plotter.setLegend(2, 8, "z");
 
         plotter.setLegend(3, 0, "v_x");
         plotter.setLegend(3, 1, "v_y");
@@ -289,10 +298,10 @@ int main(int argc, char** argv)
         cout<<"pdb["<<i<<"]=:"<<pdb[i].get_x()<<","<<pdb[i].get_y()<<","<<pdb[i].get_Z()<<endl;
     }
     cout<<endl;
-    task_a.addFeature(logZ_a, logZd_a);
+    // task_a.addFeature(logZ_a, logZd_a);
     task_a.print();
     cout<<endl;
-    task_b.addFeature(logZ_b, logZd_b);
+    // task_b.addFeature(logZ_b, logZd_b);
     task_b.print();
 
     // tf::TransformListener listener;
@@ -390,9 +399,23 @@ int main(int argc, char** argv)
                         ppb[i].buildFrom(X, Y, Zb); 
                         s1 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
                         // cout<<"s1:"<<s1<<endl;
-                        if (taskb_flag){
-                            if(s1 > 2500)  flag_task_b = 1;
-                        }    
+                        // if (taskb_flag){
+                        //     if(s1 > 2500)  flag_task_b = 1;
+                        // }   
+                        
+                        /********************* 判断切换任务条件 ***********************/
+                        if (taskb_flag){    
+                            if(s1 > 2500){
+                                switchT += 0.01;
+                                if(switchT > 1.0){
+                                    flag_task_b = 1;
+                                }
+                            }
+                            else{
+                                switchT = 0;
+                            }
+                            cout << "switchT:" << switchT << endl; 
+                        }
 
                         logZ_b.set_s(log(Zb));
                         vpMatrix LlogZb(1, 6);
@@ -446,12 +469,14 @@ int main(int argc, char** argv)
                 }
               
                 f_v = fVc * v;
+                if(velcontrain_flag)
+                    velConstrain(f_v, 3.0);
                 // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
                 
                 vel_skew_a.twist.linear.x = f_v[0];
                 vel_skew_a.twist.linear.y = f_v[1];
                 vel_skew_a.twist.linear.z = f_v[2];
-                vel_skew_a.twist.angular.z = f_v[5];
+                vel_skew_a.twist.angular.z= f_v[5];
 
                 plotter.plot(0, iter, task_a.getError());
                 plotter.plot(1, iter, f_v);
@@ -483,12 +508,14 @@ int main(int argc, char** argv)
                 // cout<<"e1=:"<<e1<<endl;
                 
                 f_v = fVc * v;
+                if(velcontrain_flag)
+                    velConstrain(f_v, 3.0);
                 // cout<<endl<<"f_v:\n"<<f_v<<endl<<endl;
                 
                 vel_skew_b.twist.linear.x = f_v[0];
                 vel_skew_b.twist.linear.y = f_v[1];
                 vel_skew_b.twist.linear.z = f_v[2];
-                vel_skew_b.twist.angular.z = f_v[5];
+                vel_skew_b.twist.angular.z= f_v[5];
 
                 // plotter.plot(0, iter, task_a.getError());
                 // plotter.plot(1, iter, v);
@@ -496,18 +523,18 @@ int main(int argc, char** argv)
                 plotter.plot(3, iter, f_v);
 
                 //judge land situation
-                // if(e < 0.001){
-                //     durationT += 0.1;
-                //     if(durationT > 3.0){
-                //         track_state.data = 2;
-                //         track_state_pub.publish(track_state);
-                //         return 0;
-                //     }
-                // }
-                // else{
-                //     durationT = 0;
-                // }
-                // cout << "durationT:" << durationT << endl;
+                if(e1 < 0.1){
+                    durationT += 0.1;
+                    if(durationT > 2.0){
+                        track_state.data = 2;
+                        track_state_pub.publish(track_state);
+                        return 0;
+                    }
+                }
+                else{
+                    durationT = 0;
+                }
+                cout << "durationT:" << durationT << endl;
      
             }
             

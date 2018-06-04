@@ -9,18 +9,19 @@
         <param name="lambdaoo" value="0.4" />
         <param name="lambda0_d" value="20" />
         <!-- 外围图标PID -->
-        <param name="Pa" value="1.0" />
+        <param name="Pa" value="1.2" />
         <param name="Ia" value="0.002" />
         <param name="Da" value="0.1" />
         <!-- 内部图标PID -->
-        <param name="Pb" value="1.2" />
-        <param name="Ib" value="0.001" />
-        <param name="Db" value="0.1" />
+        <param name="Pb" value="1.1" />
+        <param name="Ib" value="0.002" />
+        <param name="Db" value="0.01" />
         <!-- 控制指令 -->
         <param name="debug_flag" value="1" />
         <param name="export_flag" value="1" />
-        <param name="pid_flag" value="0" />
+        <param name="pid_flag" value="1" />
         <param name="taskb_flag" value="1" />
+        <param name="velcontrain_flag" value="1" />
     </node>
 
     <node name="image_view" pkg="image_view" type="image_view" respawn="false" output="screen">
