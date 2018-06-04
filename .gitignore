@@ -7,3 +7,4 @@ ibvs/log/T0error.dat
 ibvs/log/T0vc.dat
 ibvs/log/uav_pose.csv
 ibvs/log/ugv_pose.csv
+.vscode/settings.json
