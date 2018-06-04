@@ -47,6 +47,7 @@ cv_bridge::CvImageConstPtr cv_ptr;
 vpHomogeneousMatrix wMc, wMu;
 geometry_msgs::Pose ugv_pose, uav_pose;
 double durationT, switchT;
+bool land_command;
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& cam_info)
 {   
@@ -176,7 +177,7 @@ int main(int argc, char** argv)
 
     // vpAdaptiveGain lambda(lambda0,lambdaoo,lambda0_d);
     task_a.setLambda(0.5);
-    task_b.setLambda(0.3);
+    task_b.setLambda(0.4);
 
     /*************************** 初始化PID速度补偿 ****************************/
     PID_position pid_a(Pa, Ia, Da);
@@ -310,6 +311,7 @@ int main(int argc, char** argv)
     unsigned int iter = 0;
     int flag_task_a, flag_task_b;
     double e0, e1, s0, s1;
+    land_command = false;
     while(ros::ok())
     {
         flag_task_a = flag_task_b = 0;
@@ -390,22 +392,19 @@ int main(int argc, char** argv)
                         vpMatrix LlogZa(1, 6);
                         LlogZa[0][0] = LlogZa[0][1] = LlogZa[0][5] = 0;
                         LlogZa[0][2] = -1 / Za;
-                        LlogZa[0][3] = -ppa[0].get_y();
-                        LlogZa[0][4] = ppa[0].get_x();
+                        LlogZa[0][3] = -(ppa[0].get_y() + ppa[1].get_y() + ppa[2].get_y() + ppa[3].get_y()) /4;
+                        LlogZa[0][4] = (ppa[0].get_x() + ppa[1].get_x() + ppa[2].get_x() + ppa[3].get_x()) /4;
                         logZ_a.setInteractionMatrix(LlogZa);
                     }
                     else if(det->id == 1){
                         double Zb = target_real_size_b / temp * cam.get_px()+1.2; //高度估计
                         ppb[i].buildFrom(X, Y, Zb); 
                         s1 = get_area(det->p[0][0],det->p[0][1],det->p[1][0],det->p[1][1],det->p[2][0],det->p[2][1],det->p[3][0],det->p[3][1]);
-                        // cout<<"s1:"<<s1<<endl;
-                        // if (taskb_flag){
-                        //     if(s1 > 2500)  flag_task_b = 1;
-                        // }   
-                        
+                        cout<<"s1:"<<s1<<endl;
+    
                         /********************* 判断切换任务条件 ***********************/
                         if (taskb_flag){    
-                            if(s1 > 2500){
+                            if(s1 > 1500){
                                 switchT += 0.01;
                                 if(switchT > 1.0){
                                     flag_task_b = 1;
@@ -421,8 +420,8 @@ int main(int argc, char** argv)
                         vpMatrix LlogZb(1, 6);
                         LlogZb[0][0] = LlogZb[0][1] = LlogZb[0][5] = 0;
                         LlogZb[0][2] = -1 / Zb;
-                        LlogZb[0][3] = -ppb[0].get_y();
-                        LlogZb[0][4] = ppb[0].get_x();
+                        LlogZb[0][3] = -(ppb[0].get_y() + ppb[1].get_y() + ppb[2].get_y() + ppb[3].get_y()) /4;
+                        LlogZb[0][4] = (ppb[0].get_x() + ppb[1].get_x() + ppb[2].get_x() + ppb[3].get_x()) /4;
                         logZ_b.setInteractionMatrix(LlogZb);
 
                     }
@@ -482,6 +481,8 @@ int main(int argc, char** argv)
                 plotter.plot(1, iter, f_v);
                 // plotter.plot(2, i/ter, task_b.getError());
                 // plotter.plot(3, iter, f_v);
+
+                durationT  = 0;
             }
 
             /**************  计算IBVS控制器的输出参考速度：内部图标优先 ***********/
@@ -523,12 +524,13 @@ int main(int argc, char** argv)
                 plotter.plot(3, iter, f_v);
 
                 //judge land situation
-                if(e1 < 0.1){
+                if(1){
                     durationT += 0.1;
-                    if(durationT > 2.0){
-                        track_state.data = 2;
-                        track_state_pub.publish(track_state);
-                        return 0;
+                    if(durationT > 3.0){
+                        // track_state.data = 2;
+                        land_command = true;
+                        // track_state_pub.publish(track_state);
+                        // return 0;
                     }
                 }
                 else{
@@ -576,21 +578,25 @@ int main(int argc, char** argv)
             else{
                 cout<<"e0=:NULL" <<" s0:" <<" NULL";
             }
-            cout<<endl;
+            cout<<"l_com:"<<land_command<<endl;
         } 
 
         /**************  发布速度指令 ***********/
-        if(flag_task_b==1){
-            vel_pub.publish(vel_skew_b);
-        }
-        else if(flag_task_a==1){
-            vel_pub.publish(vel_skew_a);
+        if(land_command){
+            track_state.data = 2;   
         }
         else{
-            // ROS_ERROR("#2:No This ID!!")
-            vel_pub.publish(vel_skew);
-        }   
-        
+            if(flag_task_b==1){
+                vel_pub.publish(vel_skew_b);
+            }
+            else if(flag_task_a==1){
+                vel_pub.publish(vel_skew_a);
+            }
+            else{
+                // ROS_ERROR("#2:No This ID!!")
+                vel_pub.publish(vel_skew);
+            }   
+        }
         // vel_pub.publish(vel_skew);
         // cv_bridge::CvImage::toImageMsg();
         // imshow("Tag Detections", frame);
