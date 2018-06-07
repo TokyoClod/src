@@ -5,3 +5,6 @@
 [submodule "visp_bridge"]
 	path = visp_bridge
 	url = git@github.com:TokyoClod/visp_bridge.git
+[submodule "my_ugv/teleop_twist_keyboard"]
+	path = my_ugv/teleop_twist_keyboard
+	url = https://github.com/TokyoClod/teleop_twist_keyboard
