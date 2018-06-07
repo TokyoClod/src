@@ -136,6 +136,7 @@ int main(int argc, char **argv)
 
     //std_msgs::String mode_now;  
     geometry_msgs::TwistStamped vel_to_pub;
+    bool land_flag = false;
     while(ros::ok()){
         ros::Time begin =ros::Time::now();
         if( fcu_state.mode != "OFFBOARD" &&
@@ -147,7 +148,13 @@ int main(int argc, char **argv)
             }
             last_request = ros::Time::now();
         } else {
-            if( !fcu_state.armed && (ros::Time::now() - last_request > ros::Duration(2.0))){
+            if(land_flag){
+                if( arming_client.call(disarm_cmd) && disarm_cmd.response.success){
+                        ROS_INFO("Vehicle disarmed");  
+                    }
+                last_request = ros::Time::now();  
+            }
+            else if( !fcu_state.armed && (ros::Time::now() - last_request > ros::Duration(2.0))){
                 //ROS_INFO("arming_client:%d",arming_client.call(arm_cmd));
                 //ROS_INFO("arm_cmd:%d",arm_cmd.response.success);
                 if( arming_client.call(arm_cmd) && arm_cmd.response.success){
@@ -179,9 +186,11 @@ int main(int argc, char **argv)
                     ros::spinOnce();                                             
                 }
                 else if(track_state.data == 2){
-                    if( arming_client.call(disarm_cmd) && disarm_cmd.response.success){
-                        ROS_INFO("Vehicle disarmed");     
-                    }
+                    land_flag = true; 
+                    // if( arming_client.call(disarm_cmd) && disarm_cmd.response.success){
+                    //     ROS_INFO("Vehicle disarmed");  
+                    //     land_flag = true;   
+                    // }
                     last_request = ros::Time::now();  
                     // lostPose.pose.position.z = 0;
                     // local_pos_pub.publish(lostPose);

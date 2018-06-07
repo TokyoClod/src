@@ -102,8 +102,8 @@ int main(int argc, char** argv)
     ofstream oFile_uav, oFile_ugv; 
     oFile_uav.open("/home/abner/catkin_ws/src/ibvs/log/uav_pose.csv", ios::out | ios::trunc);  
     oFile_ugv.open("/home/abner/catkin_ws/src/ibvs/log/ugv_pose.csv", ios::out | ios::trunc);  
-    oFile_uav << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;   
-    oFile_ugv << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;  
+    // oFile_uav << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;   
+    // oFile_ugv << "iter" << "," << "x" << "," << "y" << "," << "z" << endl;  
 
     /*************************** 从参数服务器读取参数 ****************************/
     double target_pixel_size_a, target_pixel_size_b, target_real_size_a, target_real_size_b;
@@ -578,7 +578,7 @@ int main(int argc, char** argv)
             else{
                 cout<<"e0=:NULL" <<" s0:" <<" NULL";
             }
-            cout<<"l_com:"<<land_command<<endl;
+            cout<<"\tl_com:"<<land_command<<endl;
         } 
 
         /**************  发布速度指令 ***********/

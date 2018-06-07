@@ -13,9 +13,9 @@
         <param name="Ia" value="0.0015" />
         <param name="Da" value="0.2" />
         <!-- 内部图标PID -->
-        <param name="Pb" value="1.2" />
+        <param name="Pb" value="1.0" />
         <param name="Ib" value="0.0015" />
-        <param name="Db" value="0.3" />
+        <param name="Db" value="0.2" />
         <!-- 控制指令 -->
         <param name="debug_flag" value="1" />
         <param name="export_flag" value="1" />
