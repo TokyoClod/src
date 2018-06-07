@@ -8,3 +8,4 @@ ibvs/log/T0vc.dat
 ibvs/log/uav_pose.csv
 ibvs/log/ugv_pose.csv
 .vscode/settings.json
+.vscode/c_cpp_properties.json
